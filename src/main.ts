@@ -1,3 +1,13 @@
+/*
+ * Rush Blitz — a 2D crowd shooter.
+ * Copyright (C) 2026 sharbui
+ *
+ * This program is free software: you can redistribute it and/or modify it under
+ * the terms of the GNU Affero General Public License as published by the Free
+ * Software Foundation, either version 3 of the License, or (at your option) any
+ * later version. This program is distributed WITHOUT ANY WARRANTY. See the GNU
+ * Affero General Public License for details: <https://www.gnu.org/licenses/>.
+ */
 import Phaser from 'phaser';
 import BootScene    from './scenes/BootScene';
 import MenuScene    from './scenes/MenuScene';

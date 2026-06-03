@@ -1,0 +1,20 @@
+# Reward gate rotation — one gate per line (top option , bottom option).
+# Player runs through the top or bottom lane to take that option.
+#
+# Count effects (people):  +N  -N  *N  /N      (blue = gain, red = loss)
+# Weapon power:            P+N  P-N             (changes weapon power level)
+# Quiz gate (gray):        eq1,eq2,magnitude    (3 fields, both options are equations)
+#                          correct equation -> +magnitude people, wrong -> -magnitude
+#
+# Examples below. Edit freely; blank lines and #comments are ignored.
+
++25,P-1
+*2,+10
+8*8=16,7+2=9,25
++30,-10
+P+1,+15
+*2,/2
+12-5=6,3*4=12,30
++40,P-1
+6*7=42,9+9=20,28
+P+1,*2

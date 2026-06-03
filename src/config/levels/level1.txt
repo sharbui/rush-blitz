@@ -1,0 +1,29 @@
+# Level 1 — wave schedule. One wave per line; waves are spread across the
+# 5-minute level. Basic soldiers ("tide") stream in continuously on top of these.
+#
+# Fields:  type, hp, atk, attackType, speed, count, firstSlot
+#   type        1=tank 2=runner 3=brute 4=archer 5=shield
+#   hp          absolute HP, OR "~N" = firepower-relative: dies at ~N% of its
+#               journey to the squad (scales with how strong you've grown).
+#   atk         soldiers the player loses per hit (bullet or contact)
+#   attackType  1=straight bullet   2=scatter 30° (3 bullets)
+#   speed       move speed unit (×ENEMY_SPEED_UNIT px/s; 3 ≈ basic soldier)
+#   count       how many of this enemy
+#   firstSlot   vertical slot of the first one (1..49, 25 ≈ middle); rest at +1 each
+#
+# Blank lines and #comments are ignored.
+
+# Difficulty ramps low → high so the early game is winnable at the
+# starting state (20 soldiers, power 1). Tanks/brutes come later, once
+# reward gates have grown your numbers & power.
+
+2,10,1,1,6,12,6       # w1 runners — intro fodder (absolute)
+4,18,1,2,5,10,16      # w2 archers (scatter), light (absolute)
+5,~45,2,1,3,8,22      # w3 shield — first scaled mini-boss, dies ~45% in
+3,~55,2,1,4,10,18     # w4 brute
+1,~68,3,1,3,6,21      # w5 TANK — gets closer
+4,~60,2,2,5,10,12     # w6 archers
+3,~78,4,1,4,10,18     # w7 brute, heavier
+5,~84,4,1,3,8,22      # w8 shield wall
+1,~90,5,1,3,6,20      # w9 tank — almost reaches you
+1,~95,6,1,3,5,24      # w10 tank finale — dies right at your face

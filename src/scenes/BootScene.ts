@@ -76,6 +76,55 @@ export default class BootScene extends Phaser.Scene {
     }
     g.generateTexture('boss_giant', 140, 160);
 
+    // ════════════════════════════════════════════════════════════
+    //  Typed enemies (config type 1..5). Distinct silhouettes.
+    // ════════════════════════════════════════════════════════════
+
+    // ── 1: TANK (40×34, armored boxy, slow/heavy) ────────────────
+    g.clear();
+    g.fillStyle(0x4a5a3a); g.fillRect(2, 14, 36, 16);          // hull
+    g.fillStyle(0x5e7049); g.fillRect(6, 8, 22, 10);           // turret
+    g.fillStyle(0x33402a); g.fillRect(26, 11, 14, 4);          // barrel
+    g.fillStyle(0x222a1a);                                     // treads
+    for (let i = 0; i < 6; i++) g.fillRect(2 + i * 6, 30, 4, 4);
+    g.lineStyle(2, 0x1a2212, 1); g.strokeRect(2, 14, 36, 16);
+    g.generateTexture('e_tank', 40, 36);
+
+    // ── 2: RUNNER (16×24, lean, fast) ────────────────────────────
+    g.clear();
+    g.fillStyle(0xffddbb); g.fillCircle(8, 5, 4);
+    g.fillStyle(0xcc44aa); g.fillRect(4, 9, 8, 9);             // slim torso
+    g.fillStyle(0x882277); g.fillRect(3, 18, 4, 6); g.fillRect(9, 18, 4, 6);
+    g.fillStyle(0x66115a); g.fillTriangle(12, 10, 16, 8, 12, 16); // motion fin
+    g.generateTexture('e_runner', 16, 24);
+
+    // ── 3: BRUTE (34×38, big hulking, medium) ────────────────────
+    g.clear();
+    g.fillStyle(0xffccaa); g.fillCircle(17, 7, 6);
+    g.fillStyle(0x884422); g.fillRect(5, 12, 24, 18);          // broad torso
+    g.fillStyle(0x5a2a14); g.fillRect(0, 14, 7, 12); g.fillRect(27, 14, 7, 12); // arms
+    g.fillStyle(0x6a3318); g.fillRect(8, 30, 8, 8); g.fillRect(18, 30, 8, 8);
+    g.lineStyle(2, 0x3a1c0c, 1); g.strokeRect(5, 12, 24, 18);
+    g.generateTexture('e_brute', 34, 38);
+
+    // ── 4: ARCHER (20×28, ranged, scatter shooter) ───────────────
+    g.clear();
+    g.fillStyle(0xffddbb); g.fillCircle(10, 5, 5);
+    g.fillStyle(0x2a8c5a); g.fillRect(4, 10, 12, 11);          // robe
+    g.fillStyle(0x16603a); g.fillRect(4, 21, 5, 7); g.fillRect(11, 21, 5, 7);
+    g.lineStyle(2, 0xffee99, 1); g.beginPath();                // bow arc
+    g.arc(2, 14, 9, -1.2, 1.2); g.strokePath();
+    g.generateTexture('e_archer', 20, 28);
+
+    // ── 5: SHIELD (28×32, armored front, tanky) ──────────────────
+    g.clear();
+    g.fillStyle(0xffddbb); g.fillCircle(16, 6, 5);
+    g.fillStyle(0x556688); g.fillRect(10, 11, 12, 14);         // body
+    g.fillStyle(0x33405a); g.fillRect(10, 25, 5, 7); g.fillRect(17, 25, 5, 7);
+    g.fillStyle(0x99aacc); g.fillRoundedRect(0, 8, 9, 20, 3);  // big shield (front/left)
+    g.lineStyle(2, 0x6677aa, 1); g.strokeRoundedRect(0, 8, 9, 20, 3);
+    g.generateTexture('e_shield', 28, 32);
+
     // ── bullet (10×4, white base so weapon tints render true) ────
     g.clear();
     g.fillStyle(0xffffff); g.fillRect(0, 0, 10, 4);
@@ -113,6 +162,13 @@ export default class BootScene extends Phaser.Scene {
       g.fillRect(43 - i * 7, 22 + i * 7, 9, 9);
     }
     g.generateTexture('gate_multi', 64, 100);
+
+    // ── gate_panel (64×100, neutral white so it tints to blue/red/gray) ──
+    g.clear();
+    g.fillStyle(0xffffff); g.fillRoundedRect(0, 0, 64, 100, 10);
+    g.fillStyle(0xd6d6d6); g.fillRoundedRect(5, 5, 54, 90, 7);
+    g.lineStyle(3, 0xffffff, 1); g.strokeRoundedRect(2, 2, 60, 96, 9);
+    g.generateTexture('gate_panel', 64, 100);
 
     // ── ground tile (80×80) ──────────────────────────────────────
     g.clear();

@@ -3,25 +3,35 @@ import {
   GAME_W, GAME_H,
   SQUAD_X, SQUAD_MIN_Y, SQUAD_MAX_Y, SQUAD_LERP,
   SOLDIER_GAP_Y, SOLDIER_GAP_X, SOLDIER_PER_COL, SQUAD_MAX_VISUAL, SOLDIER_BOB,
-  BULLET_SPEED, ENEMY_BULLET_SPEED, ENEMY_BULLET_SPEED_GRUNT,
-  WEAPON_TIERS, BULLET_STACK_GAP,
-  HORDE_INTERVAL, HORDE_ROW_GAP, HORDE_Y_TOP, HORDE_Y_BOT, ENEMY_CAP, BOSS_AT_MS,
-  BG_SCROLL, TREE_SCROLL, GATE_SPEED, ENEMY_ROW_GAP,
-  BOSS_HP, BOSS_SPEED, BOSS_BULLET_SPEED,
-  BOSS_FIRE_RATE, BOSS_FIRE_RATE_P2, BOSS_FIRE_RATE_P3,
-  ENEMY_DATA,
+  BULLET_SPEED, BULLET_STACK_GAP, ENEMY_BULLET_SPEED,
+  POWER_TABLE, POWER_START,
+  ENEMY_TYPE_TEX, ENEMY_SPEED_UNIT, ENEMY_FIRE_INTERVAL, ENEMY_SCATTER_DEG,
+  ENEMY_SLOTS, ENEMY_SLOT_TOP, ENEMY_SLOT_BOT,
+  TIDE_INTERVAL, TIDE_ROW_GAP, TIDE_Y_TOP, TIDE_Y_BOT, TIDE_HP, TIDE_ATK, TIDE_SPEED, ENEMY_CAP, TIDE_PIERCE_COUNT,
+  WAVE_HP_MAX,
+  LEVEL_DURATION_MS, GATE_INTERVAL, GATE_SPEED,
+  BG_SCROLL, TREE_SCROLL,
 } from '../config/constants';
+import { loadGates, loadLevel, levelCount, GateSpec, GateOption } from '../config/loader';
 import { audio } from '../audio/AudioSystem';
 
+interface GateLane {
+  sprite: Phaser.GameObjects.Sprite;
+  text:   Phaser.GameObjects.Text;
+  option: GateOption;
+}
 interface GateEntry {
-  topSprite: Phaser.GameObjects.Sprite;
-  botSprite: Phaser.GameObjects.Sprite;
-  topText:   Phaser.GameObjects.Text;
-  botText:   Phaser.GameObjects.Text;
-  topLabel:  string;
-  botLabel:  string;
+  top: GateLane;
+  bot: GateLane;
+  gray: boolean;
   triggered: boolean;
 }
+
+// Unified gate colours: buff = blue, debuff = red, unknown(quiz) = gray.
+const GATE_BLUE = 0x2a7fff;
+const GATE_RED  = 0xee3333;
+const GATE_GRAY = 0x9a9a9a;
+const GATE_DEPTH = 40;   // above enemies/soldiers/particles
 
 export default class GameScene extends Phaser.Scene {
   // Background
@@ -33,7 +43,7 @@ export default class GameScene extends Phaser.Scene {
   private squadX = SQUAD_X;
   private squadY = 240;
   private squadTargetY = 240;
-  private soldierCount = 5;
+  private soldierCount = 20;
   private soldierSprites: Phaser.GameObjects.Sprite[] = [];
   private squadBody!: Phaser.Physics.Arcade.Sprite;
 
@@ -43,78 +53,66 @@ export default class GameScene extends Phaser.Scene {
   private lastFireTime = 0;
   private shootSoundTick = 0;
 
-  // Weapon (upgraded via reward gates, not kills)
-  private weaponTier = 0;
-
-  // Continuous spawners
-  private hordeEvt:   Phaser.Time.TimerEvent | null = null;
-  private cavalryEvt: Phaser.Time.TimerEvent | null = null;
-  private gateEvt:    Phaser.Time.TimerEvent | null = null;
-  private startTime = 0;
-  private gateIdx   = 0;
-
-  // Kill combo (slaughter feedback)
-  private comboCount   = 0;
-  private lastKillTime = 0;
-  private explodeTick  = 0;
-
-  // Reward-gate rotation (⚡ = weapon upgrade)
-  private readonly gatePool: [string, string][] = [
-    ['⚡',  '+25'],
-    ['×2', '-10'],
-    ['⚡',  '×2'],
-    ['+30', '÷2'],
-    ['⚡',  '+20'],
-    ['×2', '+18'],
-  ];
+  // Weapon power (1-based index into POWER_TABLE)
+  private power = POWER_START;
 
   // Enemies
-  private enemies!:     Phaser.Physics.Arcade.Group;
-  private bossRef:      Phaser.Physics.Arcade.Sprite | null = null;
-  private bossMaxHp =   BOSS_HP;
-  private bossHp =      BOSS_HP;
-  private bossPhase:    1 | 2 | 3 = 1;
-  private bossFireEvt:  Phaser.Time.TimerEvent | null = null;
+  private enemies!: Phaser.Physics.Arcade.Group;
+
+  // Level / config
+  private level = 1;
+  private levelWaves: ReturnType<typeof loadLevel> = [];
+  private gateSpecs:  GateSpec[] = [];
+  private gateIdx = 0;
+  private startTime = 0;
+  private levelCleared = false;
+
+  // Timers
+  private tideEvt:  Phaser.Time.TimerEvent | null = null;
+  private gateEvt:  Phaser.Time.TimerEvent | null = null;
+  private waveTimers: Phaser.Time.TimerEvent[] = [];
+  private levelEndTimer: Phaser.Time.TimerEvent | null = null;
 
   // Gates
   private gates: GateEntry[] = [];
 
-  // Particles
+  // Combo
+  private comboCount = 0;
+  private lastKillTime = 0;
+  private explodeTick = 0;
+
+  // Particles + overlay
   private sparks!: Phaser.GameObjects.Particles.ParticleEmitter;
+  private overlay: Phaser.GameObjects.Container | null = null;
 
   // State
   private gameOver = false;
-  private score    = 0;
+  private score = 0;
   private frameTime = 0;
 
   constructor() { super({ key: 'Game' }); }
 
   // ════════════════════════════════════════════════════════════════
-  //  create
-  // ════════════════════════════════════════════════════════════════
   create() {
     this.gameOver       = false;
+    this.levelCleared   = false;
     this.score          = 0;
-    this.soldierCount   = 5;
+    this.soldierCount   = 20;
     this.squadY         = 240;
     this.squadTargetY   = 240;
-    this.bossRef        = null;
-    this.bossPhase      = 1;
-    this.bossFireEvt    = null;
+    this.power          = POWER_START;
+    this.level          = 1;
     this.gates          = [];
     this.trees          = [];
     this.soldierSprites = [];
+    this.waveTimers     = [];
     this.lastFireTime   = 0;
     this.frameTime      = 0;
-    this.weaponTier     = 0;
-    this.hordeEvt       = null;
-    this.cavalryEvt     = null;
-    this.gateEvt        = null;
-    this.startTime      = 0;
     this.gateIdx        = 0;
     this.comboCount     = 0;
     this.lastKillTime   = 0;
     this.explodeTick    = 0;
+    this.overlay        = null;
 
     this.createBackground();
     this.createSquad();
@@ -123,39 +121,35 @@ export default class GameScene extends Phaser.Scene {
     this.createParticles();
     this.setupColliders();
     this.setupInput();
-    this.startSpawning();
 
-    // Launch HUD overlay
+    this.gateSpecs = loadGates();
+    this.loadLevelConfig();
+    this.startLevel();
+
     this.scene.launch('UI');
-
-    // Push initial values once UI is ready
     this.events.once('uiReady', () => {
       this.events.emit('squadCount', this.soldierCount);
       this.events.emit('scoreUpdate', this.score);
-      this.events.emit('weaponChanged', { name: WEAPON_TIERS[0].name, tier: 1, max: WEAPON_TIERS.length });
+      this.emitPower();
     });
+  }
+
+  private loadLevelConfig() {
+    this.levelWaves = loadLevel(this.level);
   }
 
   // ── Background ──────────────────────────────────────────────────
   private createBackground() {
     this.skyBg = this.add.tileSprite(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 'sky').setDepth(0);
-
-    // Mid-ground road strip
     this.add.rectangle(GAME_W / 2, 300, GAME_W, 200, 0x4a3a1e, 0.45).setDepth(1);
-
-    // Ground
     this.add.rectangle(GAME_W / 2, GAME_H - 18, GAME_W, 36, 0x3d2a12).setDepth(2);
     this.groundBg = this.add.tileSprite(GAME_W / 2, GAME_H - 36, GAME_W, 56, 'ground').setDepth(2);
 
-    // Parallax trees
     for (let i = 0; i < 10; i++) {
       const t = this.add.sprite(
         60 + i * 82 + Phaser.Math.Between(-15, 15),
-        Phaser.Math.Between(265, 345),
-        'tree'
-      ).setScale(0.45 + Math.random() * 0.45)
-        .setAlpha(0.45 + Math.random() * 0.3)
-        .setDepth(3);
+        Phaser.Math.Between(265, 345), 'tree'
+      ).setScale(0.45 + Math.random() * 0.45).setAlpha(0.45 + Math.random() * 0.3).setDepth(3);
       this.trees.push(t);
     }
   }
@@ -163,25 +157,19 @@ export default class GameScene extends Phaser.Scene {
   // ── Squad ────────────────────────────────────────────────────────
   private createSquad() {
     this.squadBody = this.physics.add.sprite(this.squadX, this.squadY, 'soldier');
-    this.squadBody.setVisible(false).setDepth(6);
-    this.squadBody.setImmovable(true);
+    this.squadBody.setVisible(false).setDepth(6).setImmovable(true);
     (this.squadBody.body as Phaser.Physics.Arcade.Body).setSize(58, 82).setAllowGravity(false);
-
     this.rebuildSoldierVisuals();
   }
 
   private rebuildSoldierVisuals() {
     this.soldierSprites.forEach(s => s.destroy());
     this.soldierSprites = [];
-
     const visible = Math.min(this.soldierCount, SQUAD_MAX_VISUAL);
-    for (let i = 0; i < visible; i++) {
-      this.soldierSprites.push(this.add.sprite(0, 0, 'soldier').setDepth(10));
-    }
+    for (let i = 0; i < visible; i++) this.soldierSprites.push(this.add.sprite(0, 0, 'soldier').setDepth(10));
     this.updateSoldierPositions(this.frameTime);
   }
 
-  // Grid slot for soldier index i (no bob). Shared by visuals + muzzle origin.
   private soldierSlot(i: number, n: number): { x: number; y: number } {
     const col        = Math.floor(i / SOLDIER_PER_COL);
     const rowInCol   = i % SOLDIER_PER_COL;
@@ -194,8 +182,6 @@ export default class GameScene extends Phaser.Scene {
 
   private updateSoldierPositions(time: number) {
     const n = this.soldierSprites.length;
-    if (n === 0) return;
-
     for (let i = 0; i < n; i++) {
       const slot = this.soldierSlot(i, n);
       const bob  = Math.sin(time * 0.006 + i * 0.9) * SOLDIER_BOB;
@@ -203,10 +189,8 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
-  // Add/remove rendered soldiers to match soldierCount (capped at SQUAD_MAX_VISUAL).
   private syncSoldierVisuals() {
     const target = Math.min(this.soldierCount, SQUAD_MAX_VISUAL);
-
     while (this.soldierSprites.length < target) {
       const s = this.add.sprite(this.squadX, this.squadY, 'soldier').setDepth(10).setAlpha(0);
       this.tweens.add({ targets: s, alpha: 1, duration: 300 });
@@ -215,146 +199,159 @@ export default class GameScene extends Phaser.Scene {
     while (this.soldierSprites.length > target) {
       const s = this.soldierSprites.pop();
       if (!s) break;
-      this.tweens.add({
-        targets: s, alpha: 0, scaleX: 1.8, scaleY: 1.8, duration: 240,
-        onComplete: () => s.destroy(),
-      });
+      this.tweens.add({ targets: s, alpha: 0, scaleX: 1.8, scaleY: 1.8, duration: 240, onComplete: () => s.destroy() });
     }
   }
 
-  // ── Bullet groups ────────────────────────────────────────────────
+  // ── Groups / particles / colliders / input ───────────────────────
   private createBulletGroups() {
     this.playerBullets = this.physics.add.group({ defaultKey: 'bullet',       maxSize: 600, allowGravity: false });
-    this.enemyBullets  = this.physics.add.group({ defaultKey: 'enemy_bullet', maxSize: 200, allowGravity: false });
+    this.enemyBullets  = this.physics.add.group({ defaultKey: 'enemy_bullet', maxSize: 220, allowGravity: false });
   }
 
-  // ── Enemy group ──────────────────────────────────────────────────
   private createEnemyGroup() {
     this.enemies = this.physics.add.group({ allowGravity: false });
   }
 
-  // ── Particles ────────────────────────────────────────────────────
   private createParticles() {
     this.sparks = this.add.particles(0, 0, 'spark', {
-      speed:    { min: 40, max: 180 },
-      angle:    { min: 0, max: 360 },
-      scale:    { start: 1, end: 0 },
-      lifespan: 360,
-      blendMode: 'ADD',
-      emitting: false,
+      speed: { min: 40, max: 180 }, angle: { min: 0, max: 360 },
+      scale: { start: 1, end: 0 }, lifespan: 360, blendMode: 'ADD', emitting: false,
     }).setDepth(20);
   }
 
-  // ── Colliders ────────────────────────────────────────────────────
   private setupColliders() {
-    this.physics.add.overlap(
-      this.playerBullets, this.enemies,
-      this.onBulletHitEnemy as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
-      undefined, this
-    );
-    this.physics.add.overlap(
-      this.squadBody, this.enemies,
-      this.onEnemyTouchSquad as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
-      undefined, this
-    );
-    this.physics.add.overlap(
-      this.squadBody, this.enemyBullets,
-      this.onEnemyBulletHit as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
-      undefined, this
-    );
+    this.physics.add.overlap(this.playerBullets, this.enemies,
+      this.onBulletHitEnemy as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback, undefined, this);
+    this.physics.add.overlap(this.squadBody, this.enemies,
+      this.onEnemyTouchSquad as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback, undefined, this);
+    this.physics.add.overlap(this.squadBody, this.enemyBullets,
+      this.onEnemyBulletHit as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback, undefined, this);
   }
 
-  // ── Input ────────────────────────────────────────────────────────
   private setupInput() {
     const clamp = (y: number) => Phaser.Math.Clamp(y, SQUAD_MIN_Y, SQUAD_MAX_Y);
     this.input.on('pointerdown', (p: Phaser.Input.Pointer) => {
-      if (!this.gameOver) this.squadTargetY = clamp(p.y);
+      if (!this.gameOver && !this.levelCleared) this.squadTargetY = clamp(p.y);
     });
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
-      if (p.isDown && !this.gameOver) this.squadTargetY = clamp(p.y);
+      if (p.isDown && !this.gameOver && !this.levelCleared) this.squadTargetY = clamp(p.y);
     });
   }
 
   // ════════════════════════════════════════════════════════════════
-  //  Continuous spawning (seamless — no wave labels)
+  //  Level lifecycle
   // ════════════════════════════════════════════════════════════════
-  private startSpawning() {
+  private startLevel() {
     this.startTime = this.time.now;
 
-    // Basic soldiers stream in forever as a dense carpet.
-    this.hordeEvt = this.time.addEvent({
-      delay: HORDE_INTERVAL, loop: true, callback: () => this.spawnHordeColumn(),
-    });
-    // Periodic shooting cavalry squads add bullet threat.
-    this.cavalryEvt = this.time.addEvent({
-      delay: 6500, startAt: 5000, loop: true, callback: () => this.spawnCavalrySquad(),
-    });
-    // Reward gates rotate through the pool (⚡ = weapon upgrade).
-    this.gateEvt = this.time.addEvent({
-      delay: 9000, startAt: 5000, loop: true, callback: () => this.spawnNextGate(),
-    });
+    // Continuous basic-soldier tide.
+    this.tideEvt = this.time.addEvent({ delay: TIDE_INTERVAL, loop: true, callback: () => this.spawnTideColumn() });
+    this.spawnTideColumn();
 
-    this.spawnHordeColumn();
-    this.time.delayedCall(BOSS_AT_MS, () => this.spawnBoss());
+    // Reward gates rotate through the config.
+    this.gateEvt = this.time.addEvent({ delay: GATE_INTERVAL, startAt: GATE_INTERVAL - 3500, loop: true, callback: () => this.spawnNextGate() });
+
+    // Schedule typed-enemy waves across the level duration.
+    const n = this.levelWaves.length;
+    for (let i = 0; i < n; i++) {
+      const t = 8000 + (i * (LEVEL_DURATION_MS - 16000)) / Math.max(n - 1, 1);
+      const w = this.levelWaves[i];
+      this.waveTimers.push(this.time.delayedCall(t, () => this.spawnWaveSpec(w)));
+    }
+
+    // Level complete after the duration.
+    this.levelEndTimer = this.time.delayedCall(LEVEL_DURATION_MS, () => this.levelComplete());
+  }
+
+  private stopLevelTimers() {
+    this.tideEvt?.remove();      this.tideEvt = null;
+    this.gateEvt?.remove();      this.gateEvt = null;
+    this.levelEndTimer?.remove(); this.levelEndTimer = null;
+    this.waveTimers.forEach(t => t.remove());
+    this.waveTimers = [];
   }
 
   private elapsed() { return this.time.now - this.startTime; }
 
-  // Difficulty creeps up with time-in-run.
-  private soldierHp() { return 3 + Math.floor(this.elapsed() / 13000); }
-  private cavalryHp() { return 12 + Math.floor(this.elapsed() / 8000); }
+  // A gray quiz gate is on screen and awaiting a choice.
+  private quizActive() { return this.gates.some(g => g.gray && !g.triggered); }
 
-  // A full-height, tightly-packed column of basic soldiers.
-  private spawnHordeColumn() {
-    if (this.gameOver) return;
-    if (this.enemies.countActive(true) > ENEMY_CAP) return;   // perf guard
+  // Camera shake, but suppressed while a quiz gate is up so the formula stays readable.
+  private shake(duration: number, intensity: number) {
+    if (this.quizActive()) return;
+    this.cameras.main.shake(duration, intensity);
+  }
 
-    const hp = this.soldierHp();
-    for (let y = HORDE_Y_TOP; y <= HORDE_Y_BOT; y += HORDE_ROW_GAP) {
-      const x  = GAME_W + 24 + Phaser.Math.Between(0, 24);
-      const yy = y + Phaser.Math.Between(-4, 4);
-      this.spawnEnemy(x, yy, 'enemy_soldier', hp, ENEMY_DATA.soldier.speed, 1, 0);
+  // ── Basic tide (neat, can overlap, HP 1) ─────────────────────────
+  private spawnTideColumn() {
+    if (this.gameOver || this.levelCleared) return;
+    if (this.enemies.countActive(true) > ENEMY_CAP) return;
+    // Tide HP tracks firepower so a piercing bullet mows ~TIDE_PIERCE_COUNT of
+    // them (not the whole column), keeping the horde a threat as you grow.
+    const hp = Math.max(TIDE_HP, Math.ceil(this.bulletDamage() / TIDE_PIERCE_COUNT));
+    for (let y = TIDE_Y_TOP; y <= TIDE_Y_BOT; y += TIDE_ROW_GAP) {
+      this.spawnEnemy(GAME_W + 20, y, 'enemy_soldier', hp, TIDE_ATK, TIDE_SPEED, 0, 0);
     }
   }
 
-  private spawnCavalrySquad() {
-    if (this.gameOver) return;
-    const hp = this.cavalryHp();
-    // Faster shots as the run goes on (clamped).
-    const fireRate = Math.max(1100, 2000 - Math.floor(this.elapsed() / 1000) * 12);
-    const count = 4;
-    const blockH = (count - 1) * ENEMY_ROW_GAP;
-    const y0 = Phaser.Math.Between(HORDE_Y_TOP + 20, HORDE_Y_BOT - 20 - blockH);
-    for (let i = 0; i < count; i++) {
-      this.spawnEnemy(GAME_W + 40, y0 + i * ENEMY_ROW_GAP, 'enemy_cavalry', hp, 150, ENEMY_DATA.cavalry.dmg, fireRate);
+  // ── Typed enemy wave from config ─────────────────────────────────
+  private slotY(slot: number): number {
+    const s = Phaser.Math.Clamp(slot, 1, ENEMY_SLOTS);
+    return ENEMY_SLOT_TOP + (ENEMY_SLOT_BOT - ENEMY_SLOT_TOP) * (s - 1) / (ENEMY_SLOTS - 1);
+  }
+
+  private spawnWaveSpec(w: ReturnType<typeof loadLevel>[number]) {
+    if (this.gameOver || this.levelCleared) return;
+    const tex = ENEMY_TYPE_TEX[w.type] ?? 'e_brute';
+    const spd = w.speed * ENEMY_SPEED_UNIT;
+    const hp  = this.resolveWaveHp(w, spd);
+    for (let i = 0; i < w.count; i++) {
+      const y = this.slotY(w.firstSlot + i);
+      const x = GAME_W + 30 + (i % 2) * 14;   // slight stagger to reduce overlap
+      this.spawnEnemy(x, y, tex, hp, w.atk, spd, w.attackType, ENEMY_FIRE_INTERVAL, true);
     }
   }
 
-  private spawnNextGate() {
-    if (this.gameOver) return;
-    const [top, bot] = this.gatePool[this.gateIdx % this.gatePool.length];
-    this.gateIdx++;
-    this.spawnGates(top, bot);
+  // Estimate damage/sec one focused enemy soaks at current firepower.
+  // (~one soldier per column shares each row-line, so columns ≈ hits/burst.)
+  private estimateFocusDps(): number {
+    const pw = POWER_TABLE[this.power - 1];
+    const n = Math.min(this.soldierCount, SQUAD_MAX_VISUAL);
+    if (n === 0) return 1;
+    const columns = Math.max(1, Math.ceil(n / SOLDIER_PER_COL));
+    const perBurst = columns * pw.bullets * this.bulletDamage();
+    return perBurst * 1000 / pw.fireRate;
   }
 
+  // Absolute HP, or for "~N" a firepower-relative HP so the enemy dies at ~N%
+  // of its journey (keeps pace with how strong you've grown).
+  private resolveWaveHp(w: ReturnType<typeof loadLevel>[number], spd: number): number {
+    if (!w.hpRel) return w.hp;
+    const travelSec = ((GAME_W + 30) - this.squadX) / Math.max(1, spd);
+    const target = this.estimateFocusDps() * travelSec * (w.hp / 100);
+    return Phaser.Math.Clamp(Math.round(target), 1, WAVE_HP_MAX);
+  }
+
+  // ── Enemy factory (atk = soldiers lost per hit; attackType drives fire) ──
   private spawnEnemy(
     x: number, y: number, tex: string,
-    hp: number, spd: number, dmg: number, fireRate = 0
+    hp: number, atk: number, spd: number, attackType: number, fireInterval: number,
+    hpBar = false
   ) {
     const e = this.enemies.create(x, y, tex) as Phaser.Physics.Arcade.Sprite;
-    e.setData({ hp, maxHp: hp, speed: spd, dmg, lastDmgTime: 0, isBoss: false, fireEvt: null });
+    e.setData({ hp, maxHp: hp, atk, attackType, fireEvt: null, hpBar: null, hpFill: null, hpText: null, hpW: 0 });
     e.setActive(true).setVisible(true).setDepth(8);
-    const body = e.body as Phaser.Physics.Arcade.Body;
-    body.setVelocityX(-spd).setAllowGravity(false);
+    (e.body as Phaser.Physics.Arcade.Body).setVelocityX(-spd).setAllowGravity(false);
 
-    // Shooting enemies fire straight left on a loop (dodgeable, predictable).
-    if (fireRate > 0) {
+    if (hpBar) this.makeHpBar(e, hp);
+
+    if (fireInterval > 0 && attackType > 0) {
       const evt = this.time.addEvent({
-        delay: fireRate, loop: true,
-        startAt: fireRate * 0.5,        // stagger first shot
+        delay: fireInterval, loop: true, startAt: fireInterval * 0.5,
         callback: () => {
-          if (!e.active || this.gameOver || e.x > GAME_W) return;
-          this.spawnEnemyBullet(e.x - 14, e.y, 180, ENEMY_BULLET_SPEED_GRUNT);
+          if (!e.active || this.gameOver || this.levelCleared || e.x > GAME_W) return;
+          this.enemyFire(e, attackType, atk);
         },
       });
       e.setData('fireEvt', evt);
@@ -362,136 +359,186 @@ export default class GameScene extends Phaser.Scene {
     return e;
   }
 
-  // Remove an enemy and tear down any attached fire timer (prevents leaks).
+  private enemyFire(e: Phaser.Physics.Arcade.Sprite, attackType: number, dmg: number) {
+    const x = e.x - 12, y = e.y;
+    if (attackType === 2) {
+      const h = ENEMY_SCATTER_DEG / 2;
+      for (const d of [180 - h, 180, 180 + h]) this.spawnEnemyBullet(x, y, d, dmg);
+    } else {
+      this.spawnEnemyBullet(x, y, 180, dmg);
+    }
+  }
+
+  private spawnEnemyBullet(x: number, y: number, angleDeg: number, dmg: number) {
+    const b = this.enemyBullets.get() as Phaser.Physics.Arcade.Sprite | null;
+    if (!b) return;
+    b.enableBody(true, x, y, true, true);
+    b.setDepth(7).setData('dmg', dmg);
+    const rad = Phaser.Math.DegToRad(angleDeg);
+    (b.body as Phaser.Physics.Arcade.Body)
+      .setVelocity(Math.cos(rad) * ENEMY_BULLET_SPEED, Math.sin(rad) * ENEMY_BULLET_SPEED)
+      .setAllowGravity(false);
+  }
+
   private destroyEnemy(enemy: Phaser.Physics.Arcade.Sprite, fromGroup: boolean) {
     const evt = enemy.getData('fireEvt') as Phaser.Time.TimerEvent | null;
     if (evt) { evt.remove(); enemy.setData('fireEvt', null); }
+    const bar = enemy.getData('hpBar') as Phaser.GameObjects.Container | null;
+    if (bar) { bar.destroy(); enemy.setData('hpBar', null); }
     if (fromGroup) this.enemies.remove(enemy, true, true);
     else enemy.disableBody(true, true);
   }
 
-  private spawnBoss() {
-    if (this.gameOver) return;
-    audio.bossRoar();
-    this.cameras.main.shake(400, 0.012);
-
-    // During the boss fight: pause gates & cavalry, thin the horde (but soldiers
-    // never fully stop). Restored implicitly on scene restart.
-    this.cavalryEvt?.remove(); this.cavalryEvt = null;
-    this.gateEvt?.remove();    this.gateEvt = null;
-    this.hordeEvt?.remove();
-    this.hordeEvt = this.time.addEvent({
-      delay: HORDE_INTERVAL * 2.4, loop: true, callback: () => this.spawnHordeColumn(),
-    });
-
-    this.bossMaxHp = BOSS_HP;
-    this.bossHp    = BOSS_HP;
-    this.bossPhase = 1;
-    this.bossVolleyTick = 0;
-
-    // Two shooting guard cavalry escort the boss in.
-    this.spawnEnemy(GAME_W + 40, 150, 'enemy_cavalry', 24, 150, 3, 1800);
-    this.spawnEnemy(GAME_W + 40, 330, 'enemy_cavalry', 24, 150, 3, 1800);
-
-    const boss = this.enemies.create(GAME_W + 90, 240, 'boss_skull') as Phaser.Physics.Arcade.Sprite;
-    boss.setData({ hp: BOSS_HP, maxHp: BOSS_HP, speed: BOSS_SPEED, dmg: 3, lastDmgTime: 0, isBoss: true });
-    boss.setActive(true).setVisible(true).setScale(1.1).setDepth(9);
-    const body = boss.body as Phaser.Physics.Arcade.Body;
-    body.setVelocityX(-BOSS_SPEED).setAllowGravity(false).setSize(68, 68);
-
-    this.bossRef = boss;
-    this.events.emit('bossSpawned', { maxHp: BOSS_HP, hp: BOSS_HP });
-
-    this.startBossFireTimer(BOSS_FIRE_RATE);
+  // ── Per-enemy HP bar (typed "mini-boss" enemies only) ─────────────
+  private makeHpBar(e: Phaser.Physics.Arcade.Sprite, hp: number) {
+    const w = 38;
+    const bg   = this.add.rectangle(0, 0, w + 2, 6, 0x000000, 0.7);
+    const fill = this.add.rectangle(-w / 2, 0, w, 4, 0x33dd44).setOrigin(0, 0.5);
+    const txt  = this.add.text(0, -12, `${hp}`, {
+      fontSize: '11px', fontStyle: 'bold', color: '#ffffff', stroke: '#000000', strokeThickness: 3,
+    }).setOrigin(0.5);
+    const c = this.add.container(e.x, e.y, [bg, fill, txt]).setDepth(55);   // top layer
+    e.setData('hpBar', c); e.setData('hpFill', fill); e.setData('hpText', txt); e.setData('hpW', w);
   }
 
-  private startBossFireTimer(delay: number) {
-    if (this.bossFireEvt) { this.bossFireEvt.remove(); this.bossFireEvt = null; }
-    this.bossFireEvt = this.time.addEvent({
-      delay, loop: true,
-      callback: () => {
-        if (!this.bossRef?.active || this.gameOver) return;
-        this.fireBossShot();
-      },
-    });
+  private refreshHpBar(e: Phaser.Physics.Arcade.Sprite) {
+    const fill = e.getData('hpFill') as Phaser.GameObjects.Rectangle | null;
+    if (!fill) return;
+    const hp    = Math.max(0, e.getData('hp') as number);
+    const maxHp = e.getData('maxHp') as number;
+    const w     = e.getData('hpW') as number;
+    const ratio = maxHp > 0 ? hp / maxHp : 0;
+    fill.width = Math.max(0, w * ratio);
+    fill.setFillStyle(ratio > 0.5 ? 0x33dd44 : ratio > 0.25 ? 0xffaa22 : 0xff3333);
+    (e.getData('hpText') as Phaser.GameObjects.Text).setText(`${hp}`);
   }
 
-  private checkBossPhase() {
-    const ratio = this.bossHp / this.bossMaxHp;
-    const next: 1 | 2 | 3 = ratio > 0.66 ? 1 : ratio > 0.33 ? 2 : 3;
-    if (next === this.bossPhase) return;
-    this.bossPhase = next;
-    this.cameras.main.flash(300, 255, next === 2 ? 140 : 60, 0);
-    this.cameras.main.shake(280, 0.016);
-    this.startBossFireTimer(next === 2 ? BOSS_FIRE_RATE_P2 : BOSS_FIRE_RATE_P3);
+  // ════════════════════════════════════════════════════════════════
+  //  Reward gates (config-driven; gray = quiz)
+  // ════════════════════════════════════════════════════════════════
+  private spawnNextGate() {
+    if (this.gameOver || this.levelCleared || this.gateSpecs.length === 0) return;
+    const spec = this.gateSpecs[this.gateIdx % this.gateSpecs.length];
+    this.gateIdx++;
+    this.spawnGate(spec);
   }
 
-  // Phase 1: 3-spread + aim   Phase 2: 5-fan aimed   Phase 3: 12-way + periodic aimed volley
-  private bossVolleyTick = 0;
-  private fireBossShot() {
-    const bx = this.bossRef!.x - 44;
-    const by = this.bossRef!.y;
-    const s  = BOSS_BULLET_SPEED;
-    const aim = () => Phaser.Math.RadToDeg(Math.atan2(this.squadY - by, this.squadX - bx));
+  private optionLabel(o: GateOption): string {
+    if (o.kind === 'count') {
+      const sym = o.op === '*' ? '×' : o.op === '/' ? '÷' : o.op;
+      return `${sym}${o.val}`;
+    }
+    if (o.kind === 'power') return `P${o.delta > 0 ? '+' : ''}${o.delta}`;
+    return o.expr.replace(/\*/g, '×').replace(/\//g, '÷'); // quiz equation, prettified
+  }
 
-    if (this.bossPhase === 1) {
-      for (const deg of [-22, 0, 22]) this.spawnEnemyBullet(bx, by, 180 + deg, s);
-      this.spawnEnemyBullet(bx, by, aim(), s);                 // +1 direct aim
-    } else if (this.bossPhase === 2) {
-      const a = aim();
-      for (const offset of [-24, -12, 0, 12, 24]) this.spawnEnemyBullet(bx, by, a + offset, s);
-    } else {
-      for (let deg = 0; deg < 360; deg += 30) this.spawnEnemyBullet(bx, by, deg, s);  // 12-way
-      this.bossVolleyTick = (this.bossVolleyTick + 1) % 2;
-      if (this.bossVolleyTick === 0) {                          // every other ring, aimed volley
-        const a = aim();
-        for (const offset of [-10, 0, 10]) this.spawnEnemyBullet(bx, by, a + offset, s);
+  // Unified colour: gray = unknown(quiz), blue = buff, red = debuff.
+  private optionColor(o: GateOption, gray: boolean): number {
+    if (gray) return GATE_GRAY;
+    if (o.kind === 'count') return (o.op === '+' || o.op === '*') ? GATE_BLUE : GATE_RED;
+    if (o.kind === 'power') return o.delta > 0 ? GATE_BLUE : GATE_RED;
+    return GATE_GRAY;
+  }
+
+  private spawnGate(spec: GateSpec) {
+    const gx = GAME_W + 50;
+    const makeLane = (y: number, o: GateOption): GateLane => {
+      // One unified panel shape for every gate; meaning comes from colour + label.
+      const s = this.add.sprite(gx, y, 'gate_panel').setDepth(GATE_DEPTH)
+        .setTint(this.optionColor(o, spec.gray));
+      const t = this.add.text(gx, y, this.optionLabel(o), {
+        fontSize: o.kind === 'quiz' ? '18px' : '24px', fontStyle: 'bold',
+        color: '#ffffff', stroke: '#000000', strokeThickness: 4,
+      }).setOrigin(0.5).setDepth(GATE_DEPTH + 1);
+      return { sprite: s, text: t, option: o };
+    };
+    this.gates.push({ top: makeLane(140, spec.top), bot: makeLane(340, spec.bot), gray: spec.gray, triggered: false });
+  }
+
+  private updateGates(delta: number) {
+    const dx = GATE_SPEED * delta / 1000;
+    for (let i = this.gates.length - 1; i >= 0; i--) {
+      const g = this.gates[i];
+      g.top.sprite.x -= dx; g.bot.sprite.x -= dx;
+      g.top.text.x = g.top.sprite.x; g.bot.text.x = g.bot.sprite.x;
+
+      if (!g.triggered && g.top.sprite.x < this.squadX + 38) {
+        g.triggered = true;
+        const pickTop = Math.abs(this.squadY - g.top.sprite.y) < Math.abs(this.squadY - g.bot.sprite.y);
+        const lane  = pickTop ? g.top : g.bot;
+        const other = pickTop ? g.bot : g.top;
+        this.applyGateOption(lane.option);
+
+        // The gate is "spent" — clear it from the screen at once.
+        this.tweens.add({ targets: lane.sprite, scaleX: 1.5, scaleY: 1.5, alpha: 0, duration: 150,
+          onComplete: () => lane.sprite.destroy() });
+        other.sprite.destroy();
+        lane.text.destroy(); other.text.destroy();
+        this.gates.splice(i, 1);
+        continue;
+      }
+
+      if (g.top.sprite.x < -110) {   // fallback: never reached the squad
+        g.top.sprite.destroy(); g.bot.sprite.destroy();
+        g.top.text.destroy();   g.bot.text.destroy();
+        this.gates.splice(i, 1);
       }
     }
   }
 
-  private spawnEnemyBullet(x: number, y: number, angleDeg: number, speed = ENEMY_BULLET_SPEED) {
-    const b = this.enemyBullets.get() as Phaser.Physics.Arcade.Sprite | null;
-    if (!b) return;
-    b.enableBody(true, x, y, true, true);
-    b.setDepth(7);
-    const rad = Phaser.Math.DegToRad(angleDeg);
-    (b.body as Phaser.Physics.Arcade.Body)
-      .setVelocity(Math.cos(rad) * speed, Math.sin(rad) * speed)
-      .setAllowGravity(false);
+  private applyGateOption(o: GateOption) {
+    audio.gate();
+    if (o.kind === 'power') { this.applyPowerDelta(o.delta); return; }
+
+    let delta = 0;
+    let label = '';
+    let bad = false;
+
+    if (o.kind === 'count') {
+      const before = this.soldierCount;
+      if      (o.op === '+') this.soldierCount += o.val;
+      else if (o.op === '-') this.soldierCount -= o.val;
+      else if (o.op === '*') this.soldierCount = Math.floor(this.soldierCount * o.val);
+      else if (o.op === '/') this.soldierCount = Math.floor(this.soldierCount / o.val);
+      delta = this.soldierCount - before;
+      label = this.optionLabel(o);
+      bad = delta < 0;
+    } else { // quiz
+      delta = o.correct ? o.mag : -o.mag;
+      this.soldierCount += delta;
+      label = `${o.expr}  ${o.correct ? '✓' : '✗'} ${delta > 0 ? '+' : ''}${delta}`;
+      bad = !o.correct;
+    }
+
+    this.soldierCount = Math.max(0, this.soldierCount);
+    this.syncSoldierVisuals();
+    this.events.emit('squadCount', this.soldierCount);
+    this.floatLabel(label, bad ? '#ff4444' : '#ffee22');
+    if (this.soldierCount <= 0) this.endGame(false);
   }
 
-  // ── Gates ────────────────────────────────────────────────────────
-  private spawnGates(topLabel: string, botLabel: string) {
-    if (this.gameOver) return;
-    const gx = GAME_W + 50;
+  private applyPowerDelta(d: number) {
+    const before = this.power;
+    this.power = Phaser.Math.Clamp(this.power + d, 1, POWER_TABLE.length);
+    this.emitPower();
+    if (this.power !== before) this.cameras.main.flash(160, 120, 200, 255);
+    this.floatLabel(`P${d > 0 ? '+' : ''}${d}`, d > 0 ? '#66ddff' : '#ff8844');
+  }
 
-    const makeGate = (y: number, label: string): { s: Phaser.GameObjects.Sprite; t: Phaser.GameObjects.Text } => {
-      const isWeapon = label === '⚡';
-      const isMulti  = label.startsWith('×') || label.startsWith('÷');
-      const isBad    = label.startsWith('-') || label.startsWith('÷');
-      const s = this.add.sprite(gx, y, isMulti ? 'gate_multi' : 'gate_add').setDepth(4);
-      if (isWeapon)  s.setTint(0x44ddff);   // weapon pickup (cyan)
-      else if (isBad) s.setTint(0xff4444);  // danger signal (runtime tint, no new art)
-      const t = this.add.text(gx, y, label, {
-        fontSize: '22px', fontStyle: 'bold',
-        color: '#ffffff', stroke: '#000000', strokeThickness: 4
-      }).setOrigin(0.5).setDepth(5);
-      return { s, t };
-    };
+  private emitPower() {
+    const w = POWER_TABLE[this.power - 1];
+    this.events.emit('powerChanged', { level: this.power, max: POWER_TABLE.length, tint: w.tint });
+  }
 
-    const top = makeGate(140, topLabel);
-    const bot = makeGate(340, botLabel);
-
-    this.gates.push({
-      topSprite: top.s, topText: top.t, topLabel,
-      botSprite: bot.s, botText: bot.t, botLabel,
-      triggered: false,
-    });
+  private floatLabel(text: string, color: string) {
+    const pop = this.add.text(this.squadX - 10, this.squadY - 55, text, {
+      fontSize: '24px', fontStyle: 'bold', color, stroke: '#000000', strokeThickness: 4,
+    }).setDepth(30).setOrigin(0.5);
+    this.tweens.add({ targets: pop, y: pop.y - 65, alpha: 0, duration: 1100, onComplete: () => pop.destroy() });
   }
 
   // ════════════════════════════════════════════════════════════════
-  //  Collision callbacks
+  //  Collisions
   // ════════════════════════════════════════════════════════════════
   private onBulletHitEnemy(
     b: Phaser.Types.Physics.Arcade.GameObjectWithBody,
@@ -501,26 +548,24 @@ export default class GameScene extends Phaser.Scene {
     const enemy  = e as Phaser.Physics.Arcade.Sprite;
     if (!bullet.active || !enemy.active) return;
 
-    bullet.disableBody(true, true);
-    this.sparks.emitParticleAt(enemy.x, enemy.y, 6);
+    this.sparks.emitParticleAt(enemy.x, enemy.y, 4);
 
-    const hp = (enemy.getData('hp') as number) - 1;
+    // Piercing: the bullet spends its remaining damage on this enemy and keeps
+    // going if any is left over.
+    let dmgLeft  = (bullet.getData('dmgLeft') as number) ?? 1;
+    const ehp    = enemy.getData('hp') as number;
+    const dealt  = Math.min(dmgLeft, ehp);
+    dmgLeft -= dealt;
+    bullet.setData('dmgLeft', dmgLeft);
+
+    const hp = ehp - dealt;
     enemy.setData('hp', hp);
-    this.tweens.add({ targets: enemy, alpha: 0.25, duration: 55, yoyo: true });
+    this.tweens.add({ targets: enemy, alpha: 0.3, duration: 50, yoyo: true });
 
-    if (hp <= 0) {
-      if (enemy.getData('isBoss') as boolean) {
-        this.sparks.emitParticleAt(enemy.x, enemy.y, 20);
-        audio.explode();
-        this.handleBossDead(enemy);
-      } else {
-        this.onEnemyKilled(enemy);
-      }
-    } else if (enemy.getData('isBoss') as boolean) {
-      this.bossHp = hp;
-      this.events.emit('bossHpUpdate', hp);
-      this.checkBossPhase();
-    }
+    if (hp <= 0) this.onEnemyKilled(enemy);
+    else this.refreshHpBar(enemy);
+
+    if (dmgLeft <= 0) bullet.disableBody(true, true);   // pierce budget spent
   }
 
   private onEnemyTouchSquad(
@@ -529,13 +574,11 @@ export default class GameScene extends Phaser.Scene {
   ) {
     const enemy = e as Phaser.Physics.Arcade.Sprite;
     if (!enemy.active) return;
-
     const now  = this.time.now;
-    const last = enemy.getData('lastDmgTime') as number;
+    const last = (enemy.getData('lastDmgTime') as number) ?? 0;
     if (now - last < 800) return;
     enemy.setData('lastDmgTime', now);
-
-    this.takeDamage(enemy.getData('dmg') as number);
+    this.takeDamage(enemy.getData('atk') as number);
   }
 
   private onEnemyBulletHit(
@@ -544,145 +587,60 @@ export default class GameScene extends Phaser.Scene {
   ) {
     const bullet = b as Phaser.Physics.Arcade.Sprite;
     if (!bullet.active) return;
+    const dmg = (bullet.getData('dmg') as number) ?? 1;
     bullet.disableBody(true, true);
-    this.takeDamage(1);
+    this.takeDamage(dmg);
   }
 
-  // ════════════════════════════════════════════════════════════════
-  //  Damage / win / loss
-  // ════════════════════════════════════════════════════════════════
   private takeDamage(amount: number) {
     if (this.gameOver) return;
     audio.hit();
-    this.cameras.main.shake(75, 0.007);
-
+    this.shake(75, 0.007);
     this.soldierCount = Math.max(0, this.soldierCount - amount);
     this.events.emit('squadCount', this.soldierCount);
     this.syncSoldierVisuals();
-
     if (this.soldierCount <= 0) this.endGame(false);
   }
 
-  private applyGateEffect(effect: string) {
-    // Weapon-upgrade pickup
-    if (effect === '⚡') {
-      this.upgradeWeapon();
-      const pop = this.add.text(this.squadX - 10, this.squadY - 55, '⚡ WEAPON', {
-        fontSize: '24px', fontStyle: 'bold',
-        color: '#66ddff', stroke: '#000000', strokeThickness: 4,
-      }).setDepth(30).setOrigin(0.5);
-      this.tweens.add({ targets: pop, y: pop.y - 65, alpha: 0, duration: 1100, onComplete: () => pop.destroy() });
-      return;
-    }
-
-    const op  = effect.charAt(0);
-    const val = parseFloat(effect.substring(1));
-    const isBad = op === '-' || op === '÷';
-
-    if      (op === '+') this.soldierCount += val;
-    else if (op === '-') this.soldierCount -= val;
-    else if (op === '×') this.soldierCount = Math.floor(this.soldierCount * val);
-    else if (op === '÷') this.soldierCount = Math.floor(this.soldierCount / val);
-    this.soldierCount = Math.max(0, this.soldierCount);
-
-    this.syncSoldierVisuals();
-    audio.gate();
-    this.events.emit('squadCount', this.soldierCount);
-
-    // Floating label (red for traps, yellow for gains)
-    const pop = this.add.text(this.squadX - 10, this.squadY - 55, effect, {
-      fontSize: '30px', fontStyle: 'bold',
-      color: isBad ? '#ff4444' : '#ffee22', stroke: '#000000', strokeThickness: 4
-    }).setDepth(30).setOrigin(0.5);
-    this.tweens.add({ targets: pop, y: pop.y - 65, alpha: 0, duration: 1100, onComplete: () => pop.destroy() });
-
-    if (this.soldierCount <= 0) this.endGame(false);   // a trap gate can wipe you out
-  }
-
-  private handleBossDead(boss: Phaser.Physics.Arcade.Sprite) {
-    if (this.bossFireEvt) { this.bossFireEvt.remove(); this.bossFireEvt = null; }
-    // Stop the endless spawners — the run is won.
-    this.hordeEvt?.remove();   this.hordeEvt = null;
-    this.cavalryEvt?.remove(); this.cavalryEvt = null;
-    this.gateEvt?.remove();    this.gateEvt = null;
-    this.sparks.emitParticleAt(boss.x, boss.y, 45);
-    this.cameras.main.shake(700, 0.025);
-    this.enemies.remove(boss, true, true);
-    this.bossRef = null;
-
-    this.events.emit('bossDead');
-    this.score += 500;
+  private onEnemyKilled(enemy: Phaser.Physics.Arcade.Sprite) {
+    const ex = enemy.x, ey = enemy.y;
+    const maxHp = enemy.getData('maxHp') as number;
+    this.score += 10 + Math.floor(maxHp / 20);
     this.events.emit('scoreUpdate', this.score);
 
-    this.time.delayedCall(1600, () => this.endGame(true));
-  }
+    const now = this.time.now;
+    this.comboCount = (now - this.lastKillTime < 700) ? this.comboCount + 1 : 1;
+    this.lastKillTime = now;
 
-  private endGame(win: boolean) {
-    if (this.gameOver) return;
-    this.gameOver = true;
-    this.time.delayedCall(win ? 200 : 700, () => {
-      this.scene.stop('UI');
-      this.scene.start('GameOver', { win, score: this.score, soldierCount: this.soldierCount });
-    });
+    this.sparks.emitParticleAt(ex, ey, 12 + Math.min(this.comboCount, 12));
+    this.explodeTick = (this.explodeTick + 1) % 3;
+    if (this.explodeTick === 0) audio.explode();
+    if (this.comboCount >= 3) {
+      this.shake(60, 0.002 + Math.min(this.comboCount, 20) * 0.0004);
+      this.events.emit('combo', this.comboCount);
+    }
+    this.destroyEnemy(enemy, true);
   }
 
   // ════════════════════════════════════════════════════════════════
-  //  update
+  //  Player fire
   // ════════════════════════════════════════════════════════════════
-  update(time: number, delta: number) {
-    this.frameTime = time;
-    if (this.gameOver) return;
-
-    // Scroll backgrounds
-    this.skyBg.tilePositionX    += 0.35;
-    this.groundBg.tilePositionX += BG_SCROLL;
-
-    // Parallax trees
-    this.trees.forEach(t => {
-      t.x -= TREE_SCROLL;
-      if (t.x < -55) t.x = GAME_W + 55;
-    });
-
-    // Lerp squad toward target Y
-    this.squadY = Phaser.Math.Linear(this.squadY, this.squadTargetY, SQUAD_LERP);
-    this.squadBody.setY(this.squadY);
-
-    // Update soldier sprite positions
-    this.updateSoldierPositions(time);
-
-    // Auto-shoot
-    this.firePlayerBullets(time);
-
-    // Update gate positions & trigger
-    this.updateGates(delta);
-
-    // Cull off-screen objects
-    this.cullGroup(this.playerBullets, s => s.x > GAME_W + 30 || s.y < -30 || s.y > GAME_H + 30);
-    this.cullGroup(this.enemyBullets,  s => s.x < -30 || s.y < -30 || s.y > GAME_H + 30);
-    // Enemies need timer-aware teardown
-    (this.enemies.getChildren() as Phaser.Physics.Arcade.Sprite[]).forEach(s => {
-      if (s.active && s.x < -130 && !(s.getData('isBoss') as boolean)) this.destroyEnemy(s, true);
-    });
-  }
-
   private firePlayerBullets(time: number) {
-    const w = WEAPON_TIERS[this.weaponTier];
+    const w = POWER_TABLE[this.power - 1];
     if (time - this.lastFireTime < w.fireRate) return;
     this.lastFireTime = time;
 
     const n = Math.min(this.soldierCount, SQUAD_MAX_VISUAL);
     if (n === 0) return;
 
-    // Each soldier fires straight (left → right) from its slot.
     for (let i = 0; i < n; i++) {
       const slot = this.soldierSlot(i, n);
-      const bx   = slot.x + 13;
+      const bx = slot.x + 13;
       for (let k = 0; k < w.bullets; k++) {
         const offY = (k - (w.bullets - 1) / 2) * BULLET_STACK_GAP;
         this.spawnPlayerBullet(bx, slot.y + offY, w.tint);
       }
     }
-
     this.shootSoundTick = (this.shootSoundTick + 1) % 3;
     if (this.shootSoundTick === 0) audio.shoot();
   }
@@ -691,89 +649,101 @@ export default class GameScene extends Phaser.Scene {
     const b = this.playerBullets.get() as Phaser.Physics.Arcade.Sprite | null;
     if (!b) return;
     b.enableBody(true, bx, by, true, true);
-    b.setDepth(6).setTint(tint);
-    (b.body as Phaser.Physics.Arcade.Body)
-      .setVelocity(BULLET_SPEED, 0)        // pure horizontal
-      .setAllowGravity(false);
+    b.setDepth(6).setTint(tint).setData('dmgLeft', this.bulletDamage());  // pierce budget
+    (b.body as Phaser.Physics.Arcade.Body).setVelocity(BULLET_SPEED, 0).setAllowGravity(false);
   }
 
-  // ── Kill handling + slaughter feedback ───────────────────────────
-  private onEnemyKilled(enemy: Phaser.Physics.Arcade.Sprite) {
-    const ex = enemy.x, ey = enemy.y;
-    const pts = (enemy.getData('dmg') as number) >= 2 ? 30 : 10;
-    this.score += pts;
-    this.events.emit('scoreUpdate', this.score);
-
-    // Combo: chained kills within the window ramp the feedback.
-    const now = this.time.now;
-    this.comboCount = (now - this.lastKillTime < 700) ? this.comboCount + 1 : 1;
-    this.lastKillTime = now;
-
-    // Beefier burst, scaled by combo (capped).
-    const burst = 14 + Math.min(this.comboCount, 12);
-    this.sparks.emitParticleAt(ex, ey, burst);
-
-    // Throttle the explosion tone so dense waves don't turn to mush.
-    this.explodeTick = (this.explodeTick + 1) % 3;
-    if (this.explodeTick === 0) audio.explode();
-
-    // Combo punch: a little shake + HUD combo when it gets going.
-    if (this.comboCount >= 3) {
-      this.cameras.main.shake(60, 0.002 + Math.min(this.comboCount, 20) * 0.0004);
-      this.events.emit('combo', this.comboCount);
-    }
-
-    this.destroyEnemy(enemy, true);
+  // Per-bullet damage = weapon power × headcount multiplier.
+  // Only SQUAD_MAX_VISUAL soldiers fire, so extra troops boost damage instead
+  // of bullet count (stable perf, but more soldiers ⇒ more firepower).
+  private bulletDamage(): number {
+    const mult = Math.max(1, Math.ceil(this.soldierCount / SQUAD_MAX_VISUAL));
+    return POWER_TABLE[this.power - 1].dmg * mult;
   }
 
-  // ── Weapon upgrade (triggered by the ⚡ reward gate) ──────────────
-  private upgradeWeapon() {
-    if (this.weaponTier >= WEAPON_TIERS.length - 1) {
-      // Already maxed → convert the pickup into bonus soldiers instead.
-      this.soldierCount += 12;
-      this.syncSoldierVisuals();
-      this.events.emit('squadCount', this.soldierCount);
-      return;
-    }
-    this.weaponTier++;
-    const w = WEAPON_TIERS[this.weaponTier];
-    audio.gate();
-    this.cameras.main.flash(180, 120, 200, 255);
-    this.events.emit('weaponChanged', { name: w.name, tier: this.weaponTier + 1, max: WEAPON_TIERS.length });
+  // ════════════════════════════════════════════════════════════════
+  //  Level complete / next level / game over
+  // ════════════════════════════════════════════════════════════════
+  private levelComplete() {
+    if (this.gameOver || this.levelCleared) return;
+    this.levelCleared = true;
+    this.stopLevelTimers();
+    audio.victory();
+
+    const hasNext = this.level < levelCount();
+    const title = this.add.text(GAME_W / 2, GAME_H / 2 - 30, `LEVEL ${this.level} CLEARED`, {
+      fontSize: '40px', fontStyle: 'bold', color: '#ffffff', stroke: '#000000', strokeThickness: 6,
+    }).setOrigin(0.5);
+    const hint = this.add.text(GAME_W / 2, GAME_H / 2 + 26,
+      hasNext ? 'TAP TO CONTINUE' : 'TAP TO FINISH', {
+      fontSize: '20px', color: '#ffee44', stroke: '#000000', strokeThickness: 4,
+    }).setOrigin(0.5);
+    const bg = this.add.rectangle(GAME_W / 2, GAME_H / 2, GAME_W, GAME_H, 0x000000, 0.45);
+    this.overlay = this.add.container(0, 0, [bg, title, hint]).setDepth(60);
+    this.tweens.add({ targets: hint, alpha: 0.3, duration: 600, yoyo: true, repeat: -1 });
+
+    // Small delay so an in-progress tap doesn't instantly skip.
+    this.time.delayedCall(500, () => {
+      this.input.once('pointerdown', () => {
+        if (hasNext) this.goToNextLevel();
+        else this.endGame(true);
+      });
+    });
   }
 
-  private updateGates(delta: number) {
-    const dx = GATE_SPEED * delta / 1000;
+  private goToNextLevel() {
+    this.level++;
+    this.loadLevelConfig();
 
-    for (let i = this.gates.length - 1; i >= 0; i--) {
-      const g = this.gates[i];
-      g.topSprite.x -= dx; g.botSprite.x -= dx;
-      g.topText.x    = g.topSprite.x;
-      g.botText.x    = g.botSprite.x;
+    // Clear the field (keep soldiers & power as progression).
+    (this.enemies.getChildren() as Phaser.Physics.Arcade.Sprite[]).slice().forEach(s => this.destroyEnemy(s, true));
+    this.cullGroup(this.playerBullets, () => true);
+    this.cullGroup(this.enemyBullets, () => true);
+    this.gates.forEach(g => { g.top.sprite.destroy(); g.bot.sprite.destroy(); g.top.text.destroy(); g.bot.text.destroy(); });
+    this.gates = [];
+    this.gateIdx = 0;
+    this.overlay?.destroy(); this.overlay = null;
 
-      // Trigger: squad crosses gate threshold
-      if (!g.triggered && g.topSprite.x < this.squadX + 38) {
-        g.triggered = true;
-        const pickTop = Math.abs(this.squadY - g.topSprite.y) < Math.abs(this.squadY - g.botSprite.y);
-        const chosen  = pickTop ? g.topSprite : g.botSprite;
-        const effect  = pickTop ? g.topLabel  : g.botLabel;
-
-        this.tweens.add({ targets: chosen, scaleX: 1.35, scaleY: 1.35, duration: 160, yoyo: true });
-        this.applyGateEffect(effect);
-      }
-
-      if (g.topSprite.x < -110) {
-        g.topSprite.destroy(); g.botSprite.destroy();
-        g.topText.destroy();   g.botText.destroy();
-        this.gates.splice(i, 1);
-      }
-    }
+    this.levelCleared = false;
+    this.startLevel();
   }
 
-  private cullGroup(
-    group: Phaser.Physics.Arcade.Group,
-    pred: (s: Phaser.Physics.Arcade.Sprite) => boolean
-  ) {
+  private endGame(win: boolean) {
+    if (this.gameOver) return;
+    this.gameOver = true;
+    this.stopLevelTimers();
+    this.time.delayedCall(win ? 100 : 700, () => {
+      this.scene.stop('UI');
+      this.scene.start('GameOver', { win, score: this.score, soldierCount: this.soldierCount });
+    });
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  update(time: number, delta: number) {
+    this.frameTime = time;
+    if (this.gameOver || this.levelCleared) return;
+
+    this.skyBg.tilePositionX    += 0.35;
+    this.groundBg.tilePositionX += BG_SCROLL;
+    this.trees.forEach(t => { t.x -= TREE_SCROLL; if (t.x < -55) t.x = GAME_W + 55; });
+
+    this.squadY = Phaser.Math.Linear(this.squadY, this.squadTargetY, SQUAD_LERP);
+    this.squadBody.setY(this.squadY);
+    this.updateSoldierPositions(time);
+    this.firePlayerBullets(time);
+    this.updateGates(delta);
+
+    this.cullGroup(this.playerBullets, s => s.x > GAME_W + 30 || s.y < -30 || s.y > GAME_H + 30);
+    this.cullGroup(this.enemyBullets,  s => s.x < -30 || s.x > GAME_W + 30 || s.y < -30 || s.y > GAME_H + 30);
+    (this.enemies.getChildren() as Phaser.Physics.Arcade.Sprite[]).forEach(s => {
+      if (!s.active) return;
+      if (s.x < -130) { this.destroyEnemy(s, true); return; }
+      const bar = s.getData('hpBar') as Phaser.GameObjects.Container | null;
+      if (bar) bar.setPosition(s.x, s.y - s.displayHeight / 2 - 12);
+    });
+  }
+
+  private cullGroup(group: Phaser.Physics.Arcade.Group, pred: (s: Phaser.Physics.Arcade.Sprite) => boolean) {
     (group.getChildren() as Phaser.Physics.Arcade.Sprite[]).forEach(s => {
       if (s.active && pred(s)) s.disableBody(true, true);
     });

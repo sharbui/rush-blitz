@@ -4,7 +4,7 @@ import { GAME_W } from '../config/constants';
 export default class UIScene extends Phaser.Scene {
   private countText!: Phaser.GameObjects.Text;
   private scoreText!: Phaser.GameObjects.Text;
-  private weaponText!: Phaser.GameObjects.Text;
+  private powerText!: Phaser.GameObjects.Text;
   private comboText!: Phaser.GameObjects.Text;
   private bossBarBg!: Phaser.GameObjects.Rectangle;
   private bossBarFill!: Phaser.GameObjects.Rectangle;
@@ -16,7 +16,7 @@ export default class UIScene extends Phaser.Scene {
   create() {
     // ── Squad count (top-left) ────────────────────────────────────
     this.add.image(28, 22, 'soldier').setScale(1.3);
-    this.countText = this.add.text(48, 10, '×5', {
+    this.countText = this.add.text(48, 10, '×20', {
       fontSize: '28px', fontStyle: 'bold',
       color: '#ffffff', stroke: '#000000', strokeThickness: 4
     });
@@ -27,10 +27,10 @@ export default class UIScene extends Phaser.Scene {
       stroke: '#000000', strokeThickness: 3
     }).setOrigin(1, 0);
 
-    // ── Weapon (top-left, under squad count) ──────────────────────
-    this.weaponText = this.add.text(12, 44, '', {
-      fontSize: '16px', fontStyle: 'bold',
-      color: '#66ddff', stroke: '#000000', strokeThickness: 3
+    // ── Power (top-left, under squad count; rainbow tint) ─────────
+    this.powerText = this.add.text(12, 44, '', {
+      fontSize: '17px', fontStyle: 'bold',
+      color: '#ffffff', stroke: '#000000', strokeThickness: 3
     });
 
     // ── Combo (right side, under score) ───────────────────────────
@@ -61,15 +61,12 @@ export default class UIScene extends Phaser.Scene {
       this.scoreText.setText(`${n}`);
     });
 
-    gs.events.on('weaponChanged', ({ name, tier, max }: { name: string; tier: number; max: number }) => {
-      this.weaponText.setText(`▲ ${name}  ${tier}/${max}`);
-      // Pop the label on each upgrade
-      this.weaponText.setScale(1.6).setColor('#ffffff');
-      this.tweens.add({
-        targets: this.weaponText, scale: 1, duration: 320, ease: 'Back.easeOut',
-        onComplete: () => this.weaponText.setColor('#66ddff'),
-      });
-      if (tier > 1) this.flashWeaponBanner(name);
+    gs.events.on('powerChanged', ({ level, max, tint }: { level: number; max: number; tint: number }) => {
+      const hex = '#' + tint.toString(16).padStart(6, '0');
+      this.powerText.setText(`⚡ POWER ${level}/${max}`).setColor(hex);
+      this.powerText.setScale(1.6);
+      this.tweens.add({ targets: this.powerText, scale: 1, duration: 320, ease: 'Back.easeOut' });
+      if (level > 1) this.flashPowerBanner(level, hex);
     });
 
     gs.events.on('combo', (n: number) => this.showCombo(n));
@@ -98,10 +95,10 @@ export default class UIScene extends Phaser.Scene {
     this.tweens.add({ targets: this.comboText, alpha: 0, delay: 800, duration: 400 });
   }
 
-  private flashWeaponBanner(name: string) {
-    const banner = this.add.text(GAME_W / 2, 96, `WEAPON UP!  ${name}`, {
+  private flashPowerBanner(level: number, hex: string) {
+    const banner = this.add.text(GAME_W / 2, 96, `POWER UP!  Lv.${level}`, {
       fontSize: '26px', fontStyle: 'bold',
-      color: '#ffffff', stroke: '#0044aa', strokeThickness: 5,
+      color: hex, stroke: '#000000', strokeThickness: 5,
     }).setOrigin(0.5).setDepth(60).setAlpha(0).setScale(0.6);
     this.tweens.add({
       targets: banner, alpha: 1, scale: 1, duration: 220, ease: 'Back.easeOut',
