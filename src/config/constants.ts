@@ -39,10 +39,15 @@ export const POWER_TABLE: PowerLevel[] = [
 export const POWER_START = 1;           // starting power level (1-based)
 
 // ── Enemy types (config "type" id → sprite) ───────────────────────
-// 1=tank 2=runner 3=brute 4=archer 5=shield  (basic tide soldier is separate)
+// Mobs 1-5; big single BOSSES 6-10 (basic tide soldier is separate).
+// 1=tank 2=runner 3=brute 4=archer 5=shield
+// 6=rex(dino) 7=mech(robot) 8=demon 9=beetle 10=golem
 export const ENEMY_TYPE_TEX: Record<number, string> = {
   1: 'e_tank', 2: 'e_runner', 3: 'e_brute', 4: 'e_archer', 5: 'e_shield',
+  6: 'b_rex',  7: 'b_mech',   8: 'b_demon', 9: 'b_beetle', 10: 'b_golem',
 };
+export const BOSS_TYPE_MIN = 6;         // type id ≥ this is a big single boss
+export const BOSS_SLOT_STEP = 10;       // extra slot spacing when count > 1 bosses
 export const ENEMY_SPEED_UNIT = 26;     // config speed × this = px/s (3 ≈ 78)
 export const ENEMY_FIRE_INTERVAL = 1700;// ms between shots for typed enemies
 export const ENEMY_SCATTER_DEG = 30;    // attackType 2 total spread (3 bullets)

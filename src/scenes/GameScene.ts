@@ -5,7 +5,7 @@ import {
   SOLDIER_GAP_Y, SOLDIER_GAP_X, SOLDIER_PER_COL, SQUAD_MAX_VISUAL, SOLDIER_BOB,
   BULLET_SPEED, BULLET_STACK_GAP, ENEMY_BULLET_SPEED,
   POWER_TABLE, POWER_START,
-  ENEMY_TYPE_TEX, ENEMY_SPEED_UNIT, ENEMY_FIRE_INTERVAL, ENEMY_SCATTER_DEG,
+  ENEMY_TYPE_TEX, BOSS_TYPE_MIN, BOSS_SLOT_STEP, ENEMY_SPEED_UNIT, ENEMY_FIRE_INTERVAL, ENEMY_SCATTER_DEG,
   ENEMY_SLOTS, ENEMY_SLOT_TOP, ENEMY_SLOT_BOT,
   TIDE_INTERVAL, TIDE_ROW_GAP, TIDE_Y_TOP, TIDE_Y_BOT, TIDE_HP, TIDE_ATK, TIDE_SPEED, ENEMY_CAP, TIDE_PIERCE_COUNT,
   WAVE_HP_MAX,
@@ -66,6 +66,7 @@ export default class GameScene extends Phaser.Scene {
   private gateIdx = 0;
   private startTime = 0;
   private levelCleared = false;
+  private lastSecLeft = -1;
 
   // Timers
   private tideEvt:  Phaser.Time.TimerEvent | null = null;
@@ -131,6 +132,7 @@ export default class GameScene extends Phaser.Scene {
       this.events.emit('squadCount', this.soldierCount);
       this.events.emit('scoreUpdate', this.score);
       this.emitPower();
+      this.events.emit('timeLeft', Math.ceil(LEVEL_DURATION_MS / 1000));
     });
   }
 
@@ -244,6 +246,7 @@ export default class GameScene extends Phaser.Scene {
   // ════════════════════════════════════════════════════════════════
   private startLevel() {
     this.startTime = this.time.now;
+    this.lastSecLeft = -1;
 
     // Continuous basic-soldier tide.
     this.tideEvt = this.time.addEvent({ delay: TIDE_INTERVAL, loop: true, callback: () => this.spawnTideColumn() });
@@ -306,10 +309,12 @@ export default class GameScene extends Phaser.Scene {
     const tex = ENEMY_TYPE_TEX[w.type] ?? 'e_brute';
     const spd = w.speed * ENEMY_SPEED_UNIT;
     const hp  = this.resolveWaveHp(w, spd);
+    const step = w.type >= BOSS_TYPE_MIN ? BOSS_SLOT_STEP : 1;  // bosses spread out
     for (let i = 0; i < w.count; i++) {
-      const y = this.slotY(w.firstSlot + i);
+      const y = this.slotY(w.firstSlot + i * step);
       const x = GAME_W + 30 + (i % 2) * 14;   // slight stagger to reduce overlap
-      this.spawnEnemy(x, y, tex, hp, w.atk, spd, w.attackType, ENEMY_FIRE_INTERVAL, true);
+      const e = this.spawnEnemy(x, y, tex, hp, w.atk, spd, w.attackType, ENEMY_FIRE_INTERVAL, true);
+      if (w.reward) e.setData('reward', w.reward);
     }
   }
 
@@ -391,26 +396,36 @@ export default class GameScene extends Phaser.Scene {
 
   // ── Per-enemy HP bar (typed "mini-boss" enemies only) ─────────────
   private makeHpBar(e: Phaser.Physics.Arcade.Sprite, hp: number) {
-    const w = 38;
-    const bg   = this.add.rectangle(0, 0, w + 2, 6, 0x000000, 0.7);
-    const fill = this.add.rectangle(-w / 2, 0, w, 4, 0x33dd44).setOrigin(0, 0.5);
-    const txt  = this.add.text(0, -12, `${hp}`, {
-      fontSize: '11px', fontStyle: 'bold', color: '#ffffff', stroke: '#000000', strokeThickness: 3,
+    const big = e.displayWidth > 70;     // big single boss
+    // Bar/font scale with the boss's width so it reads clearly (not tiny).
+    const w  = big
+      ? Phaser.Math.Clamp(Math.round(e.displayWidth * 0.9), 80, 140)
+      : Phaser.Math.Clamp(Math.round(e.displayWidth * 0.7), 36, 60);
+    const barH = big ? 10 : 5;
+    const font = big ? '22px' : '11px';
+    const yOff = big ? -18 : -12;
+
+    const bg   = this.add.rectangle(0, 0, w + 3, barH + 2, 0x000000, 0.7);
+    const fill = this.add.rectangle(-w / 2, 0, w, barH, 0x33dd44).setOrigin(0, 0.5);
+    const txt  = this.add.text(0, yOff, `${hp}`, {
+      fontSize: font, fontStyle: 'bold', color: '#ffffff', stroke: '#000000', strokeThickness: big ? 5 : 3,
     }).setOrigin(0.5);
     const c = this.add.container(e.x, e.y, [bg, fill, txt]).setDepth(55);   // top layer
-    e.setData('hpBar', c); e.setData('hpFill', fill); e.setData('hpText', txt); e.setData('hpW', w);
+    e.setData('hpBar', c); e.setData('hpFill', fill); e.setData('hpText', txt);
+    e.setData('hpW', w); e.setData('hpShown', hp); e.setData('hpYOff', barH);
   }
 
-  private refreshHpBar(e: Phaser.Physics.Arcade.Sprite) {
+  // Render the bar from the eased "shown" value (drain/countdown effect).
+  private renderHpBar(e: Phaser.Physics.Arcade.Sprite) {
     const fill = e.getData('hpFill') as Phaser.GameObjects.Rectangle | null;
     if (!fill) return;
-    const hp    = Math.max(0, e.getData('hp') as number);
     const maxHp = e.getData('maxHp') as number;
     const w     = e.getData('hpW') as number;
-    const ratio = maxHp > 0 ? hp / maxHp : 0;
-    fill.width = Math.max(0, w * ratio);
+    const shown = e.getData('hpShown') as number;
+    const ratio = maxHp > 0 ? Phaser.Math.Clamp(shown / maxHp, 0, 1) : 0;
+    fill.width = w * ratio;
     fill.setFillStyle(ratio > 0.5 ? 0x33dd44 : ratio > 0.25 ? 0xffaa22 : 0xff3333);
-    (e.getData('hpText') as Phaser.GameObjects.Text).setText(`${hp}`);
+    (e.getData('hpText') as Phaser.GameObjects.Text).setText(`${Math.ceil(shown)}`);
   }
 
   // ════════════════════════════════════════════════════════════════
@@ -530,6 +545,14 @@ export default class GameScene extends Phaser.Scene {
     this.events.emit('powerChanged', { level: this.power, max: POWER_TABLE.length, tint: w.tint });
   }
 
+  private bossDownBanner(rewardLabel: string) {
+    const t = this.add.text(GAME_W / 2, GAME_H / 2 - 70, `BOSS DOWN!  ${rewardLabel}`, {
+      fontSize: '30px', fontStyle: 'bold', color: '#ffee44', stroke: '#000000', strokeThickness: 6,
+    }).setOrigin(0.5).setDepth(61).setAlpha(0).setScale(0.6);
+    this.tweens.add({ targets: t, alpha: 1, scale: 1, duration: 240, ease: 'Back.easeOut',
+      yoyo: true, hold: 750, onComplete: () => t.destroy() });
+  }
+
   private floatLabel(text: string, color: string) {
     const pop = this.add.text(this.squadX - 10, this.squadY - 55, text, {
       fontSize: '24px', fontStyle: 'bold', color, stroke: '#000000', strokeThickness: 4,
@@ -563,7 +586,7 @@ export default class GameScene extends Phaser.Scene {
     this.tweens.add({ targets: enemy, alpha: 0.3, duration: 50, yoyo: true });
 
     if (hp <= 0) this.onEnemyKilled(enemy);
-    else this.refreshHpBar(enemy);
+    // bar drains toward the new hp in update() (countdown effect)
 
     if (dmgLeft <= 0) bullet.disableBody(true, true);   // pierce budget spent
   }
@@ -607,6 +630,15 @@ export default class GameScene extends Phaser.Scene {
     const maxHp = enemy.getData('maxHp') as number;
     this.score += 10 + Math.floor(maxHp / 20);
     this.events.emit('scoreUpdate', this.score);
+
+    // Boss kill reward (from the level config's optional 8th field).
+    const reward = enemy.getData('reward') as GateOption | undefined;
+    if (reward) {
+      this.sparks.emitParticleAt(ex, ey, 48);
+      this.shake(320, 0.02);
+      this.bossDownBanner(this.optionLabel(reward));
+      this.applyGateOption(reward);
+    }
 
     const now = this.time.now;
     this.comboCount = (now - this.lastKillTime < 700) ? this.comboCount + 1 : 1;
@@ -723,6 +755,10 @@ export default class GameScene extends Phaser.Scene {
     this.frameTime = time;
     if (this.gameOver || this.levelCleared) return;
 
+    // Level countdown (seconds), emitted only when it changes.
+    const secLeft = Math.max(0, Math.ceil((LEVEL_DURATION_MS - this.elapsed()) / 1000));
+    if (secLeft !== this.lastSecLeft) { this.lastSecLeft = secLeft; this.events.emit('timeLeft', secLeft); }
+
     this.skyBg.tilePositionX    += 0.35;
     this.groundBg.tilePositionX += BG_SCROLL;
     this.trees.forEach(t => { t.x -= TREE_SCROLL; if (t.x < -55) t.x = GAME_W + 55; });
@@ -739,7 +775,18 @@ export default class GameScene extends Phaser.Scene {
       if (!s.active) return;
       if (s.x < -130) { this.destroyEnemy(s, true); return; }
       const bar = s.getData('hpBar') as Phaser.GameObjects.Container | null;
-      if (bar) bar.setPosition(s.x, s.y - s.displayHeight / 2 - 12);
+      if (!bar) return;
+      const barH = (s.getData('hpYOff') as number) ?? 6;
+      bar.setPosition(s.x, s.y - s.displayHeight / 2 - barH - 8);
+      // Ease the shown HP toward actual HP → draining "countdown" effect.
+      const hp = Math.max(0, s.getData('hp') as number);
+      let shown = (s.getData('hpShown') as number) ?? hp;
+      if (Math.abs(shown - hp) > 0.5) {
+        shown = Phaser.Math.Linear(shown, hp, 0.16);
+        if (Math.abs(shown - hp) <= 0.5) shown = hp;
+        s.setData('hpShown', shown);
+        this.renderHpBar(s);
+      }
     });
   }
 

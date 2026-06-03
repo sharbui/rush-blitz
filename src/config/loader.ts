@@ -14,6 +14,7 @@ export interface WaveSpec {
   speed: number;       // speed units
   count: number;
   firstSlot: number;   // vertical slot of the first enemy
+  reward?: GateOption; // optional: granted when this enemy (boss) is killed
 }
 
 export type GateOption =
@@ -126,6 +127,7 @@ export function loadLevel(n: number): WaveSpec[] {
       speed:      Number(p[4]),
       count:      Number(p[5]),
       firstSlot:  Number(p[6]),
+      reward:     p[7] ? parseGateOption(p[7]) : undefined,  // boss kill reward
     };
   });
 }

@@ -6,6 +6,7 @@ export default class UIScene extends Phaser.Scene {
   private scoreText!: Phaser.GameObjects.Text;
   private powerText!: Phaser.GameObjects.Text;
   private comboText!: Phaser.GameObjects.Text;
+  private timerText!: Phaser.GameObjects.Text;
   private bossBarBg!: Phaser.GameObjects.Rectangle;
   private bossBarFill!: Phaser.GameObjects.Rectangle;
   private bossGroup!: Phaser.GameObjects.Container;
@@ -39,6 +40,12 @@ export default class UIScene extends Phaser.Scene {
       color: '#ffcc00', stroke: '#7a2200', strokeThickness: 5
     }).setOrigin(1, 0).setAlpha(0);
 
+    // ── Level countdown (top-center, seconds) ─────────────────────
+    this.timerText = this.add.text(GAME_W / 2, 8, '', {
+      fontSize: '28px', fontStyle: 'bold',
+      color: '#ffffff', stroke: '#000000', strokeThickness: 5
+    }).setOrigin(0.5, 0).setDepth(60);
+
     // ── Boss HP bar (center-top, hidden initially) ────────────────
     this.bossBarBg   = this.add.rectangle(GAME_W / 2, 22, 304, 22, 0x220000);
     this.bossBarFill = this.add.rectangle(GAME_W / 2 - 150, 22, 300, 18, 0xff2200).setOrigin(0, 0.5);
@@ -70,6 +77,11 @@ export default class UIScene extends Phaser.Scene {
     });
 
     gs.events.on('combo', (n: number) => this.showCombo(n));
+
+    gs.events.on('timeLeft', (s: number) => {
+      this.timerText.setText(`${s}`);
+      this.timerText.setColor(s <= 10 ? '#ff4444' : s <= 30 ? '#ffcc00' : '#ffffff');
+    });
 
     gs.events.on('bossSpawned', ({ maxHp, hp }: { maxHp: number; hp: number }) => {
       this.bossMaxHp = maxHp;

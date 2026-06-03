@@ -125,6 +125,80 @@ export default class BootScene extends Phaser.Scene {
     g.lineStyle(2, 0x6677aa, 1); g.strokeRoundedRect(0, 8, 9, 20, 3);
     g.generateTexture('e_shield', 28, 32);
 
+    // ════════════════════════════════════════════════════════════
+    //  Single big BOSSES (config types 6..10). Consistent style:
+    //  large dark silhouette + glowing eyes + neon outline.
+    // ════════════════════════════════════════════════════════════
+
+    // ── 6: REX (dinosaur, ~124×130, green) ───────────────────────
+    g.clear();
+    g.fillStyle(0x276b33); g.fillTriangle(124, 80, 80, 66, 80, 98);     // tail
+    g.fillStyle(0x1f5829); g.fillRect(66, 96, 18, 32);                  // hind leg
+    g.fillStyle(0x2f7d3c); g.fillEllipse(64, 72, 88, 68);              // body
+    g.fillStyle(0x1f5829); g.fillRect(40, 100, 16, 28);                // front leg
+    g.fillStyle(0x2f7d3c); g.fillEllipse(30, 46, 48, 42);             // head
+    g.fillStyle(0x276b33); g.fillRect(2, 48, 40, 16);                  // jaw
+    g.fillStyle(0xffffff); for (let i = 0; i < 5; i++) g.fillTriangle(6 + i * 8, 48, 10 + i * 8, 56, 14 + i * 8, 48);
+    g.fillStyle(0x163e1d); for (let i = 0; i < 5; i++) g.fillTriangle(40 + i * 14, 40, 47 + i * 14, 18, 54 + i * 14, 40);
+    g.fillStyle(0x276b33); g.fillRect(44, 70, 8, 14);                  // tiny arm
+    g.fillStyle(0xff2a1a); g.fillCircle(24, 40, 6);
+    g.fillStyle(0xffd23a); g.fillCircle(24, 40, 3);                    // eye glow
+    g.lineStyle(2, 0x6dff7a, 0.45); g.strokeEllipse(64, 72, 88, 68);
+    g.generateTexture('b_rex', 124, 130);
+
+    // ── 7: MECH (big robot, ~116×120, steel) ─────────────────────
+    g.clear();
+    g.fillStyle(0x55606b); g.fillRect(34, 92, 20, 26); g.fillRect(64, 92, 20, 26); // legs
+    g.fillStyle(0x55606b); g.fillRect(10, 46, 20, 40); g.fillRect(88, 46, 18, 40); // arms
+    g.fillStyle(0x707d8a); g.fillRoundedRect(30, 40, 58, 56, 6);       // torso
+    g.fillStyle(0x7d8a98); g.fillRect(20, 40, 16, 12); g.fillRect(82, 40, 16, 12); // shoulders
+    g.fillStyle(0x5a6571); g.fillRect(44, 14, 30, 26);                 // head
+    g.fillStyle(0x00e5ff); g.fillRect(48, 22, 22, 5);                  // visor eyes
+    g.fillStyle(0x00e5ff); g.fillCircle(59, 66, 9);
+    g.fillStyle(0xbff7ff); g.fillCircle(59, 66, 4);                    // chest core
+    g.fillStyle(0xff3344); g.fillRect(58, 4, 3, 10); g.fillCircle(59, 4, 3); // antenna
+    g.lineStyle(2, 0x00e5ff, 0.4); g.strokeRoundedRect(30, 40, 58, 56, 6);
+    g.generateTexture('b_mech', 116, 120);
+
+    // ── 8: DEMON (horned, ~112×122, purple) ──────────────────────
+    g.clear();
+    g.fillStyle(0x2a1636); g.fillRect(40, 104, 16, 18); g.fillRect(60, 104, 16, 18); // legs
+    g.fillStyle(0x2a1636); g.fillRect(12, 60, 16, 32); g.fillRect(84, 60, 16, 32);   // arms
+    g.fillStyle(0x3a1f4a); g.fillEllipse(56, 72, 72, 74);            // body
+    g.fillStyle(0x46265a); g.fillCircle(56, 40, 27);                  // head
+    g.fillStyle(0xd9c2a0); g.fillTriangle(34, 28, 42, 2, 48, 26); g.fillTriangle(78, 28, 70, 2, 64, 26); // horns
+    g.fillStyle(0xff7a18); g.fillEllipse(46, 40, 11, 8); g.fillEllipse(66, 40, 11, 8);
+    g.fillStyle(0xffe089); g.fillCircle(46, 40, 3); g.fillCircle(66, 40, 3); // eyes
+    g.fillStyle(0xffffff); g.fillTriangle(48, 52, 52, 62, 56, 52); g.fillTriangle(56, 52, 60, 62, 64, 52); // fangs
+    g.lineStyle(2, 0xb15cff, 0.45); g.strokeCircle(56, 40, 27);
+    g.generateTexture('b_demon', 112, 124);
+
+    // ── 9: BEETLE (giant insect, ~124×104, dark teal) ────────────
+    g.clear();
+    g.lineStyle(4, 0x14322f, 1); g.beginPath();
+    g.moveTo(34, 60); g.lineTo(10, 88); g.moveTo(52, 66); g.lineTo(34, 96);
+    g.moveTo(92, 66); g.lineTo(108, 96); g.moveTo(110, 60); g.lineTo(120, 88);
+    g.strokePath();                                                    // legs
+    g.fillStyle(0x16443f); g.fillEllipse(62, 60, 92, 66);            // carapace
+    g.lineStyle(2, 0x0c2622, 1); g.beginPath(); g.moveTo(62, 30); g.lineTo(62, 92); g.strokePath();
+    g.fillStyle(0x0f322e); g.fillCircle(62, 24, 16);                  // head
+    g.fillStyle(0x0c2622); g.fillTriangle(48, 16, 38, 6, 54, 22); g.fillTriangle(76, 16, 86, 6, 70, 22); // mandibles
+    g.fillStyle(0x66ff88); g.fillCircle(55, 22, 4); g.fillCircle(69, 22, 4); // eyes
+    g.fillStyle(0x2aa37a); g.fillCircle(44, 54, 5); g.fillCircle(80, 54, 5); g.fillCircle(62, 74, 5); // glow spots
+    g.generateTexture('b_beetle', 124, 104);
+
+    // ── 10: GOLEM (rock giant, ~118×120, stone+lava) ─────────────
+    g.clear();
+    g.fillStyle(0x5b4632); g.fillRect(36, 96, 22, 24); g.fillRect(64, 96, 22, 24); // legs
+    g.fillStyle(0x5b4632); g.fillRect(8, 46, 20, 32); g.fillRect(90, 46, 20, 32);  // arms
+    g.fillStyle(0x6b5238); g.fillRoundedRect(26, 40, 66, 60, 10);     // torso
+    g.fillStyle(0x7a5e40); g.fillCircle(44, 56, 14); g.fillCircle(74, 52, 12); g.fillCircle(60, 80, 16); // boulders
+    g.fillStyle(0x6b5238); g.fillRoundedRect(42, 12, 34, 30, 6);      // head
+    g.lineStyle(3, 0xff7a18, 0.9); g.beginPath();
+    g.moveTo(30, 60); g.lineTo(46, 68); g.lineTo(40, 84); g.moveTo(82, 50); g.lineTo(70, 64); g.strokePath(); // lava
+    g.fillStyle(0xffd23a); g.fillRect(48, 22, 8, 6); g.fillRect(62, 22, 8, 6); // eyes
+    g.generateTexture('b_golem', 118, 120);
+
     // ── bullet (10×4, white base so weapon tints render true) ────
     g.clear();
     g.fillStyle(0xffffff); g.fillRect(0, 0, 10, 4);
