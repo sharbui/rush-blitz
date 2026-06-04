@@ -64,7 +64,6 @@ export default class GameScene extends Phaser.Scene {
   private levelWaves: ReturnType<typeof loadLevel> = [];
   private gateSpecs:  GateSpec[] = [];
   private gateIdx = 0;
-  private startTime = 0;
   private levelCleared = false;
 
   // Timers
@@ -245,11 +244,14 @@ export default class GameScene extends Phaser.Scene {
   //  Level lifecycle
   // ════════════════════════════════════════════════════════════════
   private startLevel() {
-    this.startTime = this.time.now;
+    // Level complete after the duration. Created first so the countdown can read
+    // its remaining time (delta-accumulated by the Clock — never jumps like
+    // this.time.now can right after a scene starts).
+    this.levelEndTimer = this.time.delayedCall(LEVEL_DURATION_MS, () => this.levelComplete());
 
-    // Level countdown (seconds) — its own ticking timer, independent of update().
+    // Level countdown (seconds) — ticks off the end timer's remaining seconds.
     const tick = () => {
-      const s = Math.max(0, Math.ceil((LEVEL_DURATION_MS - this.elapsed()) / 1000));
+      const s = Math.max(0, Math.ceil(this.levelEndTimer?.getRemainingSeconds() ?? LEVEL_DURATION_MS / 1000));
       this.events.emit('timeLeft', s);
     };
     tick();
@@ -269,9 +271,6 @@ export default class GameScene extends Phaser.Scene {
       const w = this.levelWaves[i];
       this.waveTimers.push(this.time.delayedCall(t, () => this.spawnWaveSpec(w)));
     }
-
-    // Level complete after the duration.
-    this.levelEndTimer = this.time.delayedCall(LEVEL_DURATION_MS, () => this.levelComplete());
   }
 
   private stopLevelTimers() {
@@ -282,8 +281,6 @@ export default class GameScene extends Phaser.Scene {
     this.waveTimers.forEach(t => t.remove());
     this.waveTimers = [];
   }
-
-  private elapsed() { return this.time.now - this.startTime; }
 
   // A gray quiz gate is on screen and awaiting a choice.
   private quizActive() { return this.gates.some(g => g.gray && !g.triggered); }
