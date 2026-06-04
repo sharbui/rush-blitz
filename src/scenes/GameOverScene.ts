@@ -49,14 +49,17 @@ export default class GameOverScene extends Phaser.Scene {
   }
 
   private createBtn(x: number, y: number, label: string, bg: number, hover: number, cb: () => void) {
-    const r = this.add.rectangle(x, y, 150, 50, bg)
-      .setInteractive().setStrokeStyle(2, 0xffffff);
+    const r = this.add.rectangle(x, y, 150, 50, bg).setStrokeStyle(2, 0xffffff);
     this.add.text(x, y, label, {
       fontSize: '20px', fontStyle: 'bold',
       color: '#ffffff', stroke: '#000000', strokeThickness: 3
     }).setOrigin(0.5);
-    r.on('pointerover', () => r.setFillStyle(hover));
-    r.on('pointerout',  () => r.setFillStyle(bg));
-    r.on('pointerdown', cb);
+
+    // A Zone is a reliable input hit area (handles centered origin correctly,
+    // unlike a Shape's auto hit area which can be offset).
+    const zone = this.add.zone(x, y, 150, 50).setInteractive({ useHandCursor: true });
+    zone.on('pointerover', () => r.setFillStyle(hover));
+    zone.on('pointerout',  () => r.setFillStyle(bg));
+    zone.on('pointerup',   cb);
   }
 }

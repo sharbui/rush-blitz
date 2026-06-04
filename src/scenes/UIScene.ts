@@ -93,6 +93,15 @@ export default class UIScene extends Phaser.Scene {
 
     gs.events.on('bossDead', () => this.bossGroup.setVisible(false));
 
+    // CRITICAL: these listeners live on GameScene's emitter, not ours, so they
+    // are NOT auto-removed when this UI scene stops. Without this cleanup, a
+    // restarted GameScene would emit into stale listeners pointing at destroyed
+    // text objects → crash/freeze on "重新挑戰".
+    this.events.once('shutdown', () => {
+      ['squadCount', 'scoreUpdate', 'powerChanged', 'combo', 'timeLeft',
+       'bossSpawned', 'bossHpUpdate', 'bossDead'].forEach(ev => gs.events.off(ev));
+    });
+
     // Let GameScene know UI is ready so it can push initial values
     gs.events.emit('uiReady');
   }
