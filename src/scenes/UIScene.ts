@@ -7,6 +7,7 @@ export default class UIScene extends Phaser.Scene {
   private powerText!: Phaser.GameObjects.Text;
   private comboText!: Phaser.GameObjects.Text;
   private timerText!: Phaser.GameObjects.Text;
+  private waveText!: Phaser.GameObjects.Text;
   private bossBarBg!: Phaser.GameObjects.Rectangle;
   private bossBarFill!: Phaser.GameObjects.Rectangle;
   private bossGroup!: Phaser.GameObjects.Container;
@@ -46,6 +47,12 @@ export default class UIScene extends Phaser.Scene {
       color: '#ffffff', stroke: '#000000', strokeThickness: 5
     }).setOrigin(0.5, 0).setDepth(60);
 
+    // ── Wave progress (top-center, under the timer) ───────────────
+    this.waveText = this.add.text(GAME_W / 2, 42, '', {
+      fontSize: '16px', fontStyle: 'bold',
+      color: '#bbddff', stroke: '#000000', strokeThickness: 3
+    }).setOrigin(0.5, 0).setDepth(60);
+
     // ── Boss HP bar (center-top, hidden initially) ────────────────
     this.bossBarBg   = this.add.rectangle(GAME_W / 2, 22, 304, 22, 0x220000);
     this.bossBarFill = this.add.rectangle(GAME_W / 2 - 150, 22, 300, 18, 0xff2200).setOrigin(0, 0.5);
@@ -83,6 +90,10 @@ export default class UIScene extends Phaser.Scene {
       this.timerText.setColor(s <= 10 ? '#ff4444' : s <= 30 ? '#ffcc00' : '#ffffff');
     });
 
+    gs.events.on('waveProgress', ({ num, total }: { num: number; total: number }) => {
+      this.waveText.setText(`WAVE ${num}/${total}`);
+    });
+
     gs.events.on('bossSpawned', ({ maxHp, hp }: { maxHp: number; hp: number }) => {
       this.bossMaxHp = maxHp;
       this.bossGroup.setVisible(true);
@@ -98,7 +109,7 @@ export default class UIScene extends Phaser.Scene {
     // restarted GameScene would emit into stale listeners pointing at destroyed
     // text objects → crash/freeze on "重新挑戰".
     this.events.once('shutdown', () => {
-      ['squadCount', 'scoreUpdate', 'powerChanged', 'combo', 'timeLeft',
+      ['squadCount', 'scoreUpdate', 'powerChanged', 'combo', 'timeLeft', 'waveProgress',
        'bossSpawned', 'bossHpUpdate', 'bossDead'].forEach(ev => gs.events.off(ev));
     });
 

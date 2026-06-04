@@ -132,6 +132,7 @@ export default class GameScene extends Phaser.Scene {
       this.events.emit('scoreUpdate', this.score);
       this.emitPower();
       this.events.emit('timeLeft', Math.ceil(LEVEL_DURATION_MS / 1000));
+      this.events.emit('waveProgress', { num: 0, total: this.levelWaves.length });
     });
   }
 
@@ -271,8 +272,10 @@ export default class GameScene extends Phaser.Scene {
     for (let i = 0; i < n; i++) {
       const t = 8000 + (i * (spreadEnd - 8000)) / Math.max(n - 1, 1);
       const w = this.levelWaves[i];
-      this.waveTimers.push(this.time.delayedCall(t, () => this.spawnWaveSpec(w)));
+      const num = i + 1;
+      this.waveTimers.push(this.time.delayedCall(t, () => this.spawnWaveSpec(w, num, n)));
     }
+    this.events.emit('waveProgress', { num: 0, total: n });
   }
 
   private stopLevelTimers() {
@@ -311,9 +314,10 @@ export default class GameScene extends Phaser.Scene {
     return ENEMY_SLOT_TOP + (ENEMY_SLOT_BOT - ENEMY_SLOT_TOP) * (s - 1) / (ENEMY_SLOTS - 1);
   }
 
-  private spawnWaveSpec(w: ReturnType<typeof loadLevel>[number]) {
+  private spawnWaveSpec(w: ReturnType<typeof loadLevel>[number], num: number, total: number) {
     if (this.gameOver || this.levelCleared) return;
-    this.waveWarning(w.type);
+    this.events.emit('waveProgress', { num, total });
+    this.waveWarning(w.type, num, total);
     const tex = ENEMY_TYPE_TEX[w.type] ?? 'e_brute';
     const spd = w.speed * ENEMY_SPEED_UNIT;
     const hp  = this.resolveWaveHp(w, spd);
@@ -553,20 +557,24 @@ export default class GameScene extends Phaser.Scene {
     this.events.emit('powerChanged', { level: this.power, max: POWER_TABLE.length, tint: w.tint });
   }
 
-  // Wave warning: dramatic for big bosses (6-10), light for mobs (1-5).
-  private waveWarning(type: number) {
+  // Wave warning, always at the same fixed spot. Dramatic for big bosses
+  // (6-10), light for mobs (1-5).
+  private waveWarning(type: number, num: number, total: number) {
     const name = ENEMY_TYPE_NAME[type] ?? 'ENEMY';
+    const WARN_Y = 150;   // fixed position so the player always knows where to look
     if (type >= BOSS_TYPE_MIN) {
       audio.bossRoar();
       this.cameras.main.flash(220, 120, 0, 0);
-      const t = this.add.text(GAME_W / 2, GAME_H / 2 - 60, `⚠ BOSS — ${name} ⚠`, {
-        fontSize: '42px', fontStyle: 'bold', color: '#ff3322', stroke: '#000000', strokeThickness: 7,
+      const t = this.add.text(GAME_W / 2, WARN_Y, `WAVE ${num}/${total}\n⚠ BOSS — ${name} ⚠`, {
+        fontSize: '40px', fontStyle: 'bold', color: '#ff3322', stroke: '#000000', strokeThickness: 7,
+        align: 'center',
       }).setOrigin(0.5).setDepth(61).setAlpha(0).setScale(0.7);
       this.tweens.add({ targets: t, alpha: 1, scale: 1, duration: 300, ease: 'Back.easeOut',
         yoyo: true, hold: 950, onComplete: () => t.destroy() });
     } else {
-      const t = this.add.text(GAME_W / 2, 116, `${name} INCOMING`, {
+      const t = this.add.text(GAME_W / 2, WARN_Y, `WAVE ${num}/${total} — ${name}`, {
         fontSize: '24px', fontStyle: 'bold', color: '#ffcc44', stroke: '#000000', strokeThickness: 4,
+        align: 'center',
       }).setOrigin(0.5).setDepth(61).setAlpha(0);
       this.tweens.add({ targets: t, alpha: 1, duration: 200, yoyo: true, hold: 600,
         onComplete: () => t.destroy() });
