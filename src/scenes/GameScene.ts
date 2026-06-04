@@ -66,11 +66,11 @@ export default class GameScene extends Phaser.Scene {
   private gateIdx = 0;
   private startTime = 0;
   private levelCleared = false;
-  private lastSecLeft = -1;
 
   // Timers
-  private tideEvt:  Phaser.Time.TimerEvent | null = null;
-  private gateEvt:  Phaser.Time.TimerEvent | null = null;
+  private tideEvt:      Phaser.Time.TimerEvent | null = null;
+  private gateEvt:      Phaser.Time.TimerEvent | null = null;
+  private countdownEvt: Phaser.Time.TimerEvent | null = null;
   private waveTimers: Phaser.Time.TimerEvent[] = [];
   private levelEndTimer: Phaser.Time.TimerEvent | null = null;
 
@@ -246,7 +246,14 @@ export default class GameScene extends Phaser.Scene {
   // ════════════════════════════════════════════════════════════════
   private startLevel() {
     this.startTime = this.time.now;
-    this.lastSecLeft = -1;
+
+    // Level countdown (seconds) — its own ticking timer, independent of update().
+    const tick = () => {
+      const s = Math.max(0, Math.ceil((LEVEL_DURATION_MS - this.elapsed()) / 1000));
+      this.events.emit('timeLeft', s);
+    };
+    tick();
+    this.countdownEvt = this.time.addEvent({ delay: 250, loop: true, callback: tick });
 
     // Continuous basic-soldier tide.
     this.tideEvt = this.time.addEvent({ delay: TIDE_INTERVAL, loop: true, callback: () => this.spawnTideColumn() });
@@ -268,8 +275,9 @@ export default class GameScene extends Phaser.Scene {
   }
 
   private stopLevelTimers() {
-    this.tideEvt?.remove();      this.tideEvt = null;
-    this.gateEvt?.remove();      this.gateEvt = null;
+    this.tideEvt?.remove();       this.tideEvt = null;
+    this.gateEvt?.remove();       this.gateEvt = null;
+    this.countdownEvt?.remove();  this.countdownEvt = null;
     this.levelEndTimer?.remove(); this.levelEndTimer = null;
     this.waveTimers.forEach(t => t.remove());
     this.waveTimers = [];
@@ -754,10 +762,6 @@ export default class GameScene extends Phaser.Scene {
   update(time: number, delta: number) {
     this.frameTime = time;
     if (this.gameOver || this.levelCleared) return;
-
-    // Level countdown (seconds), emitted only when it changes.
-    const secLeft = Math.max(0, Math.ceil((LEVEL_DURATION_MS - this.elapsed()) / 1000));
-    if (secLeft !== this.lastSecLeft) { this.lastSecLeft = secLeft; this.events.emit('timeLeft', secLeft); }
 
     this.skyBg.tilePositionX    += 0.35;
     this.groundBg.tilePositionX += BG_SCROLL;
