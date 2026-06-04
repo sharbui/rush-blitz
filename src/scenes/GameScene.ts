@@ -5,7 +5,7 @@ import {
   SOLDIER_GAP_Y, SOLDIER_GAP_X, SOLDIER_PER_COL, SQUAD_MAX_VISUAL, SOLDIER_BOB,
   BULLET_SPEED, BULLET_STACK_GAP, ENEMY_BULLET_SPEED,
   POWER_TABLE, POWER_START,
-  ENEMY_TYPE_TEX, BOSS_TYPE_MIN, BOSS_SLOT_STEP, ENEMY_SPEED_UNIT, ENEMY_FIRE_INTERVAL, ENEMY_SCATTER_DEG,
+  ENEMY_TYPE_TEX, ENEMY_TYPE_NAME, BOSS_TYPE_MIN, BOSS_SLOT_STEP, ENEMY_SPEED_UNIT, ENEMY_FIRE_INTERVAL, ENEMY_SCATTER_DEG,
   ENEMY_SLOTS, ENEMY_SLOT_TOP, ENEMY_SLOT_BOT,
   TIDE_INTERVAL, TIDE_ROW_GAP, TIDE_Y_TOP, TIDE_Y_BOT, TIDE_HP, TIDE_ATK, TIDE_SPEED, ENEMY_CAP, TIDE_PIERCE_COUNT,
   WAVE_HP_MAX,
@@ -264,10 +264,12 @@ export default class GameScene extends Phaser.Scene {
     // Reward gates rotate through the config.
     this.gateEvt = this.time.addEvent({ delay: GATE_INTERVAL, startAt: GATE_INTERVAL - 3500, loop: true, callback: () => this.spawnNextGate() });
 
-    // Schedule typed-enemy waves across the level duration.
+    // Schedule typed-enemy waves over the first ~78% of the level, so a finale
+    // boss (last wave) still has time to march in and be fought before time runs out.
     const n = this.levelWaves.length;
+    const spreadEnd = LEVEL_DURATION_MS * 0.78;
     for (let i = 0; i < n; i++) {
-      const t = 8000 + (i * (LEVEL_DURATION_MS - 16000)) / Math.max(n - 1, 1);
+      const t = 8000 + (i * (spreadEnd - 8000)) / Math.max(n - 1, 1);
       const w = this.levelWaves[i];
       this.waveTimers.push(this.time.delayedCall(t, () => this.spawnWaveSpec(w)));
     }
@@ -311,6 +313,7 @@ export default class GameScene extends Phaser.Scene {
 
   private spawnWaveSpec(w: ReturnType<typeof loadLevel>[number]) {
     if (this.gameOver || this.levelCleared) return;
+    this.waveWarning(w.type);
     const tex = ENEMY_TYPE_TEX[w.type] ?? 'e_brute';
     const spd = w.speed * ENEMY_SPEED_UNIT;
     const hp  = this.resolveWaveHp(w, spd);
@@ -548,6 +551,26 @@ export default class GameScene extends Phaser.Scene {
   private emitPower() {
     const w = POWER_TABLE[this.power - 1];
     this.events.emit('powerChanged', { level: this.power, max: POWER_TABLE.length, tint: w.tint });
+  }
+
+  // Wave warning: dramatic for big bosses (6-10), light for mobs (1-5).
+  private waveWarning(type: number) {
+    const name = ENEMY_TYPE_NAME[type] ?? 'ENEMY';
+    if (type >= BOSS_TYPE_MIN) {
+      audio.bossRoar();
+      this.cameras.main.flash(220, 120, 0, 0);
+      const t = this.add.text(GAME_W / 2, GAME_H / 2 - 60, `⚠ BOSS — ${name} ⚠`, {
+        fontSize: '42px', fontStyle: 'bold', color: '#ff3322', stroke: '#000000', strokeThickness: 7,
+      }).setOrigin(0.5).setDepth(61).setAlpha(0).setScale(0.7);
+      this.tweens.add({ targets: t, alpha: 1, scale: 1, duration: 300, ease: 'Back.easeOut',
+        yoyo: true, hold: 950, onComplete: () => t.destroy() });
+    } else {
+      const t = this.add.text(GAME_W / 2, 116, `${name} INCOMING`, {
+        fontSize: '24px', fontStyle: 'bold', color: '#ffcc44', stroke: '#000000', strokeThickness: 4,
+      }).setOrigin(0.5).setDepth(61).setAlpha(0);
+      this.tweens.add({ targets: t, alpha: 1, duration: 200, yoyo: true, hold: 600,
+        onComplete: () => t.destroy() });
+    }
   }
 
   private bossDownBanner(rewardLabel: string) {

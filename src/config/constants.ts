@@ -48,6 +48,10 @@ export const ENEMY_TYPE_TEX: Record<number, string> = {
 };
 export const BOSS_TYPE_MIN = 6;         // type id ≥ this is a big single boss
 export const BOSS_SLOT_STEP = 10;       // extra slot spacing when count > 1 bosses
+export const ENEMY_TYPE_NAME: Record<number, string> = {
+  1: 'TANK', 2: 'RUNNER', 3: 'BRUTE', 4: 'ARCHER', 5: 'SHIELD',
+  6: 'REX',  7: 'MECH',   8: 'DEMON', 9: 'BEETLE', 10: 'GOLEM',
+};
 export const ENEMY_SPEED_UNIT = 26;     // config speed × this = px/s (3 ≈ 78)
 export const ENEMY_FIRE_INTERVAL = 1700;// ms between shots for typed enemies
 export const ENEMY_SCATTER_DEG = 30;    // attackType 2 total spread (3 bullets)

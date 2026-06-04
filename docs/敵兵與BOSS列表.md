@@ -14,6 +14,16 @@ type, hp, atk, attackType, speed, count, firstSlot
 - **firstSlot**：第一隻的垂直格（1..49，25≈中間）；其餘 +1 遞增（BOSS 自動拉開 `BOSS_SLOT_STEP=10` 格避免重疊）。
 
 > 美術全部由 `BootScene` 程序生成，無外部圖檔。新增/替換外型改 `BootScene` 對應貼圖即可。
+> **顯示名稱**（出場警示用）統一保存在 `src/config/constants.ts` 的 `ENEMY_TYPE_NAME`。
+> 出場時顯示：小兵 `<NAME> INCOMING`、大 BOSS `⚠ BOSS — <NAME> ⚠`。改名字改這張表即可。
+
+| type | 顯示名(ENEMY_TYPE_NAME) | type | 顯示名 |
+|------|------|------|------|
+| 1 | TANK | 6 | REX |
+| 2 | RUNNER | 7 | MECH |
+| 3 | BRUTE | 8 | DEMON |
+| 4 | ARCHER | 9 | BEETLE |
+| 5 | SHIELD | 10 | GOLEM |
 
 ---
 
